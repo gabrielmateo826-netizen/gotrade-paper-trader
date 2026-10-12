@@ -1,2 +1,3 @@
 Trade_ID,Strategy,Ticker,Status,Entry_Date,Entry_Price,Exit_Date,Exit_Price,Tranche_USD,Gross_PnL,Fees_USD,Net_PnL,Return_Pct,Notes
 1,Dual-Momentum,AAPL,Open,2026-10-11,336.64,,,42.5,,,,,Stop:330.7 | Target:348.52 | Pullback
+2,RSI-2,NVDA,Open,2026-10-12,226.32,,,42.5,,,,,RSI2: 8.9
