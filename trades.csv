@@ -4,3 +4,4 @@ Trade_ID,Strategy,Ticker,Status,Entry_Date,Entry_Price,Exit_Date,Exit_Price,Tran
 3,Dual-Momentum,QQQ,Stop Hit,2026-10-13,743.57,2026-10-15,738.84,42.5,-0.27,0.26,-0.53,-1.24%,Stop:738.84 | Target:753.03 | Pullback
 4,RSI-2,QQQ,Open,2026-10-15,723.63,,,42.5,,,,,RSI2: 3.3
 5,RSI-2,SPY,Open,2026-10-15,769.97,,,42.5,,,,,RSI2: 7.5
+6,Dual-Momentum,SPY,Open,2026-10-15,771.79,,,42.5,,,,,Stop:764.44 | Target:786.49 | Pullback

@@ -18,11 +18,12 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA** with liv
 ---
 
 ### Currently Open Positions
-|   Trade_ID | Strategy      | Ticker   | Entry_Date   |   Entry_Price | Notes                                 |
-|-----------:|:--------------|:---------|:-------------|--------------:|:--------------------------------------|
-|          1 | Dual-Momentum | AAPL     | 2026-10-11   |        336.64 | Stop:330.7 | Target:348.52 | Pullback |
-|          4 | RSI-2         | QQQ      | 2026-10-15   |        723.63 | RSI2: 3.3                             |
-|          5 | RSI-2         | SPY      | 2026-10-15   |        769.97 | RSI2: 7.5                             |
+|   Trade_ID | Strategy      | Ticker   | Entry_Date   |   Entry_Price | Notes                                  |
+|-----------:|:--------------|:---------|:-------------|--------------:|:---------------------------------------|
+|          1 | Dual-Momentum | AAPL     | 2026-10-11   |        336.64 | Stop:330.7 | Target:348.52 | Pullback  |
+|          4 | RSI-2         | QQQ      | 2026-10-15   |        723.63 | RSI2: 3.3                              |
+|          5 | RSI-2         | SPY      | 2026-10-15   |        769.97 | RSI2: 7.5                              |
+|          6 | Dual-Momentum | SPY      | 2026-10-15   |        771.79 | Stop:764.44 | Target:786.49 | Pullback |
 
 ---
 
