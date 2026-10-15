@@ -13,7 +13,7 @@ TRANCHE_USD = 42.50
 MAX_TRANCHES_PER_STRATEGY = 2
 CSV_FILE = "trades.csv"
 
-# Initialize CSV structure if not present
+# 1. Initialize CSV structure if not present
 if not os.path.exists(CSV_FILE):
   df_init = pd.DataFrame(columns=[
       "Trade_ID",
@@ -33,11 +33,25 @@ if not os.path.exists(CSV_FILE):
   ])
   df_init.to_csv(CSV_FILE, index=False)
 
-trades_df = pd.read_csv(CSV_FILE)
+# 2. Load trades with explicit string dtypes to prevent float64 casting errors on empty cells
+trades_df = pd.read_csv(
+    CSV_FILE,
+    dtype={
+        "Trade_ID": "Int64",
+        "Strategy": "str",
+        "Ticker": "str",
+        "Status": "str",
+        "Entry_Date": "str",
+        "Exit_Date": "str",
+        "Return_Pct": "str",
+        "Notes": "str",
+    },
+)
+
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 
 # ==============================================================================
-# 1. FETCH HISTORICAL DATA FOR THE UNIVERSE
+# 3. FETCH HISTORICAL MARKET DATA FOR THE UNIVERSE
 # ==============================================================================
 print(f"Fetching market data for universe: {UNIVERSE}...")
 market_data = {}
@@ -71,13 +85,13 @@ for ticker in UNIVERSE:
     print(f"Error loading {ticker}: {e}")
 
 # ==============================================================================
-# 2. EVALUATE EXITS ON OPEN POSITIONS
+# 4. EVALUATE EXITS ON OPEN POSITIONS
 # ==============================================================================
 open_indices = trades_df[trades_df["Status"] == "Open"].index
 
 for idx in open_indices:
-  strategy = trades_df.loc[idx, "Strategy"]
-  ticker = trades_df.loc[idx, "Ticker"]
+  strategy = str(trades_df.loc[idx, "Strategy"])
+  ticker = str(trades_df.loc[idx, "Ticker"])
   entry_p = float(trades_df.loc[idx, "Entry_Price"])
 
   if ticker not in market_data:
@@ -125,8 +139,8 @@ for idx in open_indices:
     net_pnl = gross_pnl - fees
     ret_pct = (net_pnl / TRANCHE_USD) * 100
 
-    trades_df.loc[idx, "Status"] = exit_status
-    trades_df.loc[idx, "Exit_Date"] = today_str
+    trades_df.loc[idx, "Status"] = str(exit_status)
+    trades_df.loc[idx, "Exit_Date"] = str(today_str)
     trades_df.loc[idx, "Exit_Price"] = round(exit_price, 2)
     trades_df.loc[idx, "Gross_PnL"] = round(gross_pnl, 2)
     trades_df.loc[idx, "Fees_USD"] = round(fees, 2)
@@ -138,7 +152,7 @@ for idx in open_indices:
     )
 
 # ==============================================================================
-# 3. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE
+# 5. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE
 # ==============================================================================
 rsi2_open = len(
     trades_df[
@@ -153,6 +167,9 @@ mom_open = len(
 )
 
 for ticker, df in market_data.items():
+  if len(df) < 200:
+    continue
+
   latest = df.iloc[-1]
   prev = df.iloc[-2]
 
@@ -176,7 +193,11 @@ for ticker, df in market_data.items():
         & (trades_df["Status"] == "Open")
     )
     if not already_holding and (c > sma200) and (prev_rsi2 < 10.0):
-      new_id = len(trades_df) + 1
+      new_id = (
+          int(trades_df["Trade_ID"].max()) + 1
+          if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
+          else 1
+      )
       new_row = {
           "Trade_ID": new_id,
           "Strategy": "RSI-2",
@@ -185,11 +206,11 @@ for ticker, df in market_data.items():
           "Entry_Date": today_str,
           "Entry_Price": round(c, 2),
           "Exit_Date": "",
-          "Exit_Price": "",
+          "Exit_Price": np.nan,
           "Tranche_USD": TRANCHE_USD,
-          "Gross_PnL": "",
-          "Fees_USD": "",
-          "Net_PnL": "",
+          "Gross_PnL": np.nan,
+          "Fees_USD": np.nan,
+          "Net_PnL": np.nan,
           "Return_Pct": "",
           "Notes": f"RSI2: {prev_rsi2:.1f}",
       }
@@ -221,7 +242,11 @@ for ticker, df in market_data.items():
         target_val = round(c + (2.0 * risk_val), 2)
         setup_type = "Breakout" if is_breakout else "Pullback"
 
-        new_id = len(trades_df) + 1
+        new_id = (
+            int(trades_df["Trade_ID"].max()) + 1
+            if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
+            else 1
+        )
         new_row = {
             "Trade_ID": new_id,
             "Strategy": "Dual-Momentum",
@@ -230,11 +255,11 @@ for ticker, df in market_data.items():
             "Entry_Date": today_str,
             "Entry_Price": round(c, 2),
             "Exit_Date": "",
-            "Exit_Price": "",
+            "Exit_Price": np.nan,
             "Tranche_USD": TRANCHE_USD,
-            "Gross_PnL": "",
-            "Fees_USD": "",
-            "Net_PnL": "",
+            "Gross_PnL": np.nan,
+            "Fees_USD": np.nan,
+            "Net_PnL": np.nan,
             "Return_Pct": "",
             "Notes": f"Stop:{stop_loss} | Target:{target_val} | {setup_type}",
         }
@@ -247,7 +272,7 @@ for ticker, df in market_data.items():
 trades_df.to_csv(CSV_FILE, index=False)
 
 # ==============================================================================
-# 4. BUILD DYNAMIC README SCOREBOARD
+# 6. BUILD DYNAMIC README SCOREBOARD
 # ==============================================================================
 
 
@@ -264,7 +289,7 @@ def calc_metrics(strat_name):
   if total == 0:
     return {"total": 0, "wr": "0.0%", "pnl": "$0.00", "pf": "N/A"}
 
-  pnl_series = subset["Net_PnL"].astype(float)
+  pnl_series = pd.to_numeric(subset["Net_PnL"], errors="coerce").dropna()
   wins = pnl_series[pnl_series > 0]
   losses = pnl_series[pnl_series < 0]
   wr = f"{(len(wins) / total) * 100:.1f}% ({len(wins)}/{total})"
@@ -280,12 +305,22 @@ def calc_metrics(strat_name):
 m_rsi = calc_metrics("RSI-2")
 m_mom = calc_metrics("Dual-Momentum")
 
-open_trades_table = trades_df[trades_df["Status"] == "Open"][
-    ["Trade_ID", "Strategy", "Ticker", "Entry_Date", "Entry_Price", "Notes"]
-].to_markdown(index=False)
-closed_trades_table = trades_df[trades_df["Status"] != "Open"].tail(
-    10
-).to_markdown(index=False)
+open_trades = trades_df[trades_df["Status"] == "Open"]
+closed_trades = trades_df[trades_df["Status"] != "Open"]
+
+open_trades_table = (
+    open_trades[
+        ["Trade_ID", "Strategy", "Ticker", "Entry_Date", "Entry_Price", "Notes"]
+    ].to_markdown(index=False)
+    if len(open_trades) > 0
+    else "_No active open positions. Cash intact._"
+)
+
+closed_trades_table = (
+    closed_trades.tail(10).to_markdown(index=False)
+    if len(closed_trades) > 0
+    else "_No closed trades yet._"
+)
 
 readme_content = f"""# 30-Day Forward Paper Trading Arena (GoTrade Setup)
 
@@ -307,12 +342,12 @@ Simulating automated swing trades across **{', '.join(UNIVERSE)}** with live US 
 ---
 
 ### Currently Open Positions
-{open_trades_table if open_trades_table.strip() else "_No active open positions. Cash intact._"}
+{open_trades_table}
 
 ---
 
 ### Recent Closed Trade History
-{closed_trades_table if closed_trades_table.strip() else "_No closed trades yet._"}
+{closed_trades_table}
 
 *Automated via GitHub Actions. Runs daily at 5:05 AM PHT after US market close.*
 """
@@ -320,4 +355,4 @@ Simulating automated swing trades across **{', '.join(UNIVERSE)}** with live US 
 with open("README.md", "w") as f:
   f.write(readme_content)
 
-print("Engine run complete. README.md scoreboard refreshed.")
+print("Engine run complete. README.md scoreboard refreshed successfully.")
