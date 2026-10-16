@@ -23,7 +23,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 
 def send_telegram(message):
-  """Dispatches alert messages to Telegram without nested f-string complexity."""
+  """Dispatches alert messages to Telegram without f-strings."""
   if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     print("Telegram credentials not configured. Skipping alert dispatch.")
     return False
@@ -44,7 +44,7 @@ def send_telegram(message):
     print("Telegram alert delivered successfully.")
     return True
   except Exception as e:
-    print(f"Telegram dispatch error: {e}")
+    print("Telegram dispatch error: " + str(e))
     return False
 
 
@@ -89,7 +89,7 @@ today_str = datetime.date.today().strftime("%Y-%m-%d")
 # 3. FETCH HISTORICAL DATA & COMPUTE TECHNICAL METRICS
 # ==============================================================================
 universe_str = ", ".join(UNIVERSE)
-print(f"Fetching market data for universe: {universe_str}...")
+print("Fetching market data for universe: " + universe_str + "...")
 market_data = {}
 
 for ticker in UNIVERSE:
@@ -118,7 +118,7 @@ for ticker in UNIVERSE:
 
     market_data[ticker] = df
   except Exception as e:
-    print(f"Error loading {ticker}: {e}")
+    print("Error loading " + str(ticker) + ": " + str(e))
 
 # ==============================================================================
 # MACRO REGIME GATE CHECK (SPY > 200 SMA)
@@ -135,8 +135,13 @@ if MACRO_TICKER in market_data:
 
 gate_status = "GREEN" if macro_regime_green else "RED"
 print(
-    f"--- MACRO GATE: SPY ${spy_close:.2f} \vert{} 200 SMA:${spy_sma200:.2f} | Gate:"
-    f" {gate_status} ---"
+    "--- MACRO GATE: SPY $"
+    + str(round(spy_close, 2))
+    + " | 200 SMA: $"
+    + str(round(spy_sma200, 2))
+    + " | Gate: "
+    + gate_status
+    + " ---"
 )
 
 # ==============================================================================
@@ -201,18 +206,37 @@ for idx in open_indices:
     trades_df.loc[idx, "Gross_PnL"] = round(gross_pnl, 2)
     trades_df.loc[idx, "Fees_USD"] = round(fees, 2)
     trades_df.loc[idx, "Net_PnL"] = round(net_pnl, 2)
-    trades_df.loc[idx, "Return_Pct"] = f"{ret_pct:+.2f}%"
+    trades_df.loc[idx, "Return_Pct"] = (
+        ("+" if ret_pct >= 0 else "") + str(round(ret_pct, 2)) + "%"
+    )
     exits_triggered += 1
 
     icon = "🟢" if net_pnl >= 0 else "🔴"
+    pnl_sign = "+" if net_pnl >= 0 else ""
     exit_msg = (
-        f"{icon} *EXIT ALERT: [{strategy}]*\n"
-        f"• *Ticker:* {ticker}\n"
-        f"• *Action:* SELL ALL SHARES (Market Sell)\n"
-        f"• *Exit Price:* ${exit_price:.2f}\n"
-        f"• *Reason:* {exit_status}\n"
-        f"• *Net P&L:* ${net_pnl:+.2f} ({ret_pct:+.2f}% net)\n"
-        f"_(GoTrade: Open Portfolio -> {ticker} -> Market Sell 100%)_"
+        icon
+        + " *EXIT ALERT: ["
+        + strategy
+        + "]*\n"
+        + "• *Ticker:* "
+        + ticker
+        + "\n"
+        + "• *Action:* SELL ALL SHARES (Market Sell)\n"
+        + "• *Exit Price:* $"
+        + str(round(exit_price, 2))
+        + "\n"
+        + "• *Reason:* "
+        + str(exit_status)
+        + "\n"
+        + "• *Net P&L:* $"
+        + pnl_sign
+        + str(round(net_pnl, 2))
+        + " ("
+        + str(trades_df.loc[idx, "Return_Pct"])
+        + " net)\n"
+        + "_(GoTrade: Open Portfolio -> "
+        + ticker
+        + " -> Market Sell 100%)_"
     )
     send_telegram(exit_msg)
 
@@ -279,7 +303,7 @@ if macro_regime_green:
             "Fees_USD": np.nan,
             "Net_PnL": np.nan,
             "Return_Pct": "",
-            "Notes": f"RSI2: {prev_rsi2:.1f}",
+            "Notes": "RSI2: " + str(round(prev_rsi2, 1)),
         }
         trades_df = pd.concat(
             [trades_df, pd.DataFrame([new_row])], ignore_index=True
@@ -288,12 +312,18 @@ if macro_regime_green:
         entries_triggered += 1
 
         entry_msg = (
-            f"🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
-            f"• *Ticker:* {ticker}\n"
-            f"• *Action:* BUY $42.50 USD (Market Buy)\n"
-            f"• *Price:* ${c:.2f} | RSI(2): {prev_rsi2:.1f}\n"
-            f"• *Target:* Close > 5 SMA | Hard Stop: -5.0%\n"
-            f"_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
+            "🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
+            + "• *Ticker:* "
+            + ticker
+            + "\n"
+            + "• *Action:* BUY $42.50 USD (Market Buy)\n"
+            + "• *Price:* $"
+            + str(round(c, 2))
+            + " | RSI(2): "
+            + str(round(prev_rsi2, 1))
+            + "\n"
+            + "• *Target:* Close > 5 SMA | Hard Stop: -5.0%\n"
+            + "_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
         )
         send_telegram(entry_msg)
 
@@ -337,7 +367,14 @@ if macro_regime_green:
               "Fees_USD": np.nan,
               "Net_PnL": np.nan,
               "Return_Pct": "",
-              "Notes": f"Stop:{stop_loss} | Target:{target_val} | {setup_type}",
+              "Notes": (
+                  "Stop:"
+                  + str(stop_loss)
+                  + " | Target:"
+                  + str(target_val)
+                  + " | "
+                  + setup_type
+              ),
           }
           trades_df = pd.concat(
               [trades_df, pd.DataFrame([new_row])], ignore_index=True
@@ -346,12 +383,22 @@ if macro_regime_green:
           entries_triggered += 1
 
           entry_msg = (
-              f"🚀 *ENTRY ALERT: [Dual-Momentum]*\n"
-              f"• *Ticker:* {ticker}\n"
-              f"• *Action:* BUY $42.50 USD (Market Buy)\n"
-              f"• *Setup:* {setup_type} @ ${c:.2f}\n"
-              f"• *Stop-Loss:* ${stop_loss:.2f} \vert{} *Target:*${target_val:.2f}\n"
-              f"_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
+              "🚀 *ENTRY ALERT: [Dual-Momentum]*\n"
+              + "• *Ticker:* "
+              + ticker
+              + "\n"
+              + "• *Action:* BUY $42.50 USD (Market Buy)\n"
+              + "• *Setup:* "
+              + setup_type
+              + " @ $"
+              + str(round(c, 2))
+              + "\n"
+              + "• *Stop-Loss:* $"
+              + str(stop_loss)
+              + " | *Target:* $"
+              + str(target_val)
+              + "\n"
+              + "_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
           )
           send_telegram(entry_msg)
 
@@ -363,12 +410,21 @@ trades_df.to_csv(CSV_FILE, index=False)
 if exits_triggered == 0 and entries_triggered == 0:
   open_count = len(trades_df[trades_df["Status"] == "Open"])
   heartbeat_msg = (
-      f"🤖 *GoTrade Paper Bot: Daily Status Update*\n"
-      f"• *Date:* {today_str}\n"
-      f"• *Macro Gate:* {gate_status}\n"
-      f"• *Tracked Universe:* {universe_str}\n"
-      f"• *Tranches Deployed:* {open_count}/4 active positions\n"
-      f"• *Action:* No exits or entries triggered. All stop/target levels intact."
+      "🤖 *GoTrade Paper Bot: Daily Status Update*\n"
+      + "• *Date:* "
+      + today_str
+      + "\n"
+      + "• *Macro Gate:* "
+      + gate_status
+      + "\n"
+      + "• *Tracked Universe:* "
+      + universe_str
+      + "\n"
+      + "• *Tranches Deployed:* "
+      + str(open_count)
+      + "/4 active positions\n"
+      + "• *Action:* No exits or entries triggered. All stop/target levels"
+      " intact."
   )
   send_telegram(heartbeat_msg)
 
@@ -393,10 +449,19 @@ def calc_metrics(strat_name):
   pnl_series = pd.to_numeric(subset["Net_PnL"], errors="coerce").dropna()
   wins = pnl_series[pnl_series > 0]
   losses = pnl_series[pnl_series < 0]
-  wr = f"{(len(wins) / total) * 100.0:.1f}% ({len(wins)}/{total})"
-  net_pnl = f"${pnl_series.sum():+.2f}"
+  wr = (
+      str(round((len(wins) / total) * 100.0, 1))
+      + "% ("
+      + str(len(wins))
+      + "/"
+      + str(total)
+      + ")"
+  )
+  pnl_sum = round(pnl_series.sum(), 2)
+  pnl_sign = "+" if pnl_sum >= 0 else ""
+  net_pnl = "$" + pnl_sign + str(pnl_sum)
   pf = (
-      f"{wins.sum() / abs(losses.sum()):.2f}"
+      str(round(wins.sum() / abs(losses.sum()), 2))
       if abs(losses.sum()) > 0
       else ("Inf" if wins.sum() > 0 else "N/A")
   )
@@ -429,21 +494,16 @@ gate_badge = (
     else "🔴 **RED (Paused - Cash Protected)**"
 )
 
-m_rsi_total = m_rsi["total"]
-m_rsi_wr = m_rsi["wr"]
-m_rsi_pf = m_rsi["pf"]
-m_rsi_pnl = m_rsi["pnl"]
+readme_content = (
+    """# 30-Day Forward Paper Trading Arena (GoTrade Setup)
 
-m_mom_total = m_mom["total"]
-m_mom_wr = m_mom["wr"]
-m_mom_pf = m_mom["pf"]
-m_mom_pnl = m_mom["pnl"]
+Simulating automated swing trades across **"""
+    + universe_str
+    + """** with live US market feeds.
 
-readme_content = f"""# 30-Day Forward Paper Trading Arena (GoTrade Setup)
-
-Simulating automated swing trades across **{universe_str}** with live US market feeds.
-
-### Macro Market Regime Gate: {gate_badge}
+### Macro Market Regime Gate: """
+    + gate_badge
+    + """
 *New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day Simple Moving Average.*
 
 ---
@@ -454,25 +514,46 @@ Simulating automated swing trades across **{universe_str}** with live US market 
 | :--- | :--- | :--- |
 | **Philosophy** | Mean Reversion (Buy Oversold Panics) | Trend-Following (Breakouts & Pullbacks) |
 | **Virtual Capital** | $85.00 USD (2x $42.50 tranches) | $85.00 USD (2x $42.50 tranches) |
-| **Total Closed Trades** | {m_rsi_total} | {m_mom_total} |
-| **Win Rate %** | {m_rsi_wr} | {m_mom_wr} |
-| **Profit Factor** | {m_rsi_pf} | {m_mom_pf} |
-| **Cumulative Net P&L** | **{m_rsi_pnl} USD** | **{m_mom_pnl} USD** |
+| **Total Closed Trades** | """
+    + str(m_rsi["total"])
+    + """ | """
+    + str(m_mom["total"])
+    + """ |
+| **Win Rate %** | """
+    + str(m_rsi["wr"])
+    + """ | """
+    + str(m_mom["wr"])
+    + """ |
+| **Profit Factor** | """
+    + str(m_rsi["pf"])
+    + """ | """
+    + str(m_mom["pf"])
+    + """ |
+| **Cumulative Net P&L** | **"""
+    + str(m_rsi["pnl"])
+    + """ USD** | **"""
+    + str(m_mom["pnl"])
+    + """ USD** |
 
 *All results deduct GoTrade's 0.60% round-trip commission friction (0.30% buy + 0.30% sell).*
 
 ---
 
 ### Currently Open Positions
-{open_trades_table}
+"""
+    + open_trades_table
+    + """
 
 ---
 
 ### Recent Closed Trade History
-{closed_trades_table}
+"""
+    + closed_trades_table
+    + """
 
 *Automated via GitHub Actions. Runs daily at 5:05 AM PHT after US market close.*
 """
+)
 
 with open("README.md", "w") as f:
   f.write(readme_content)
