@@ -8,7 +8,7 @@ import pandas as pd
 import yfinance as yf
 
 # ==============================================================================
-# CONFIGURATION & UNIVERSE (VIEWPOINT 1: EPHE INCLUDED)
+# CONFIGURATION & UNIVERSE (EPHE INCLUDED)
 # ==============================================================================
 UNIVERSE = ["QQQ", "SPY", "AAPL", "MSFT", "NVDA", "EPHE"]
 MACRO_TICKER = "SPY"
@@ -23,10 +23,10 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 
 def send_telegram(message):
-  """Sends structured trading alerts directly to Telegram."""
+  """Sends structured alerts directly to Telegram."""
   if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    print("Telegram tokens not detected. Skipping message dispatch.")
-    return
+    print("Telegram tokens missing or not detected. Skipping message dispatch.")
+    return False
   url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
   payload = json.dumps({
       "chat_id": TELEGRAM_CHAT_ID,
@@ -40,8 +40,10 @@ def send_telegram(message):
     with urllib.request.urlopen(req, timeout=10) as response:
       pass
     print("Telegram notification delivered successfully.")
+    return True
   except Exception as e:
     print(f"Failed to deliver Telegram notification: {e}")
+    return False
 
 
 # 1. Initialize CSV structure if not present
@@ -116,24 +118,27 @@ for ticker in UNIVERSE:
     print(f"Error loading {ticker}: {e}")
 
 # ==============================================================================
-# VIEWPOINT 2: MACRO REGIME GATE (SPY > 200 SMA)
+# MACRO REGIME GATE CHECK (SPY > 200 SMA)
 # ==============================================================================
 macro_regime_green = False
+spy_close = 0.0
+spy_sma200 = 0.0
 if MACRO_TICKER in market_data:
   spy_latest = market_data[MACRO_TICKER].iloc[-1]
   spy_close = float(spy_latest["Close"])
   spy_sma200 = float(spy_latest["SMA200"])
   macro_regime_green = spy_close > spy_sma200
-  print(
-      f"--- MACRO GATE CHECK: SPY Close: ${spy_close:.2f} | 200 SMA:"
-      f" ${spy_sma200:.2f} | Gate: {'GREEN' if macro_regime_green else 'RED'}"
-      " ---"
-  )
+
+print(
+    f"--- MACRO GATE: SPY ${spy_close:.2f} \vert{} 200 SMA:${spy_sma200:.2f} |"
+    f" Gate: {'GREEN' if macro_regime_green else 'RED'} ---"
+)
 
 # ==============================================================================
 # 4. EVALUATE EXITS ON OPEN POSITIONS
 # ==============================================================================
 open_indices = trades_df[trades_df["Status"] == "Open"].index
+exits_triggered = 0
 
 for idx in open_indices:
   strategy = str(trades_df.loc[idx, "Strategy"])
@@ -192,8 +197,8 @@ for idx in open_indices:
     trades_df.loc[idx, "Fees_USD"] = round(fees, 2)
     trades_df.loc[idx, "Net_PnL"] = round(net_pnl, 2)
     trades_df.loc[idx, "Return_Pct"] = f"{ret_pct:+.2f}%"
+    exits_triggered += 1
 
-    # Send Telegram Exit Alert
     icon = "🟢" if net_pnl >= 0 else "🔴"
     exit_msg = (
         f"{icon} *EXIT ALERT: [{strategy}]*\n"
@@ -220,13 +225,9 @@ mom_open = len(
         & (trades_df["Status"] == "Open")
     ]
 )
+entries_triggered = 0
 
-if not macro_regime_green:
-  print(
-      "-> MACRO REGIME IS RED (SPY <= 200 SMA). New entries paused to protect"
-      " capital."
-  )
-else:
+if macro_regime_green:
   for ticker, df in market_data.items():
     if len(df) < 200:
       continue
@@ -246,7 +247,7 @@ else:
     high20 = float(latest["High20"])
     prev_rsi2 = float(prev["RSI2"])
 
-    # --- MODEL A: RSI-2 Dip Setup ---
+    # Model A: RSI-2 Dip
     if rsi2_open < MAX_TRANCHES_PER_STRATEGY:
       already_holding = any(
           (trades_df["Strategy"] == "RSI-2")
@@ -279,20 +280,19 @@ else:
             [trades_df, pd.DataFrame([new_row])], ignore_index=True
         )
         rsi2_open += 1
+        entries_triggered += 1
 
-        # Send Telegram Entry Alert
         entry_msg = (
             f"🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
             f"• *Ticker:* {ticker}\n"
             f"• *Action:* BUY $42.50 USD (Market Buy)\n"
-            f"• *Current Price:* ${c:.2f}\n"
-            f"• *Condition:* 2-Period RSI @ {prev_rsi2:.1f} (Oversold)\n"
+            f"• *Price:* ${c:.2f} | RSI(2): {prev_rsi2:.1f}\n"
             f"• *Target:* Close > 5 SMA | Hard Stop: -5.0%\n"
             f"_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
         )
         send_telegram(entry_msg)
 
-    # --- MODEL B: Dual Momentum Setup ---
+    # Model B: Dual Momentum
     if mom_open < MAX_TRANCHES_PER_STRATEGY:
       already_holding_mom = any(
           (trades_df["Strategy"] == "Dual-Momentum")
@@ -305,13 +305,12 @@ else:
 
         if is_breakout or is_pullback:
           raw_risk = c - low_c
-          if (raw_risk / c > 0.06) or (raw_risk <= 0):
-            stop_loss = round(c * 0.94, 2)
-          else:
-            stop_loss = round(low_c, 2)
-
-          risk_val = c - stop_loss
-          target_val = round(c + (2.0 * risk_val), 2)
+          stop_loss = (
+              round(c * 0.94, 2)
+              if (raw_risk / c > 0.06 or raw_risk <= 0)
+              else round(low_c, 2)
+          )
+          target_val = round(c + (2.0 * (c - stop_loss)), 2)
           setup_type = "Breakout" if is_breakout else "Pullback"
 
           new_id = (
@@ -339,14 +338,14 @@ else:
               [trades_df, pd.DataFrame([new_row])], ignore_index=True
           )
           mom_open += 1
+          entries_triggered += 1
 
-          # Send Telegram Entry Alert
           entry_msg = (
               f"🚀 *ENTRY ALERT: [Dual-Momentum]*\n"
               f"• *Ticker:* {ticker}\n"
               f"• *Action:* BUY $42.50 USD (Market Buy)\n"
               f"• *Setup:* {setup_type} @ ${c:.2f}\n"
-              f"• *Stop-Loss:* ${stop_loss:.2f} \vert{} *Target (2R):*${target_val:.2f}\n"
+              f"• *Stop-Loss:* ${stop_loss:.2f} \vert{} *Target:*${target_val:.2f}\n"
               f"_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
           )
           send_telegram(entry_msg)
@@ -354,7 +353,29 @@ else:
 trades_df.to_csv(CSV_FILE, index=False)
 
 # ==============================================================================
-# 6. BUILD DYNAMIC README SCOREBOARD
+# 6. SEND DAILY TELEGRAM STATUS HEARTBEAT
+# ==============================================================================
+# If no buys or sells fired today, send a heartbeat so you know the bot is alive
+if exits_triggered == 0 and entries_triggered == 0:
+  gate_str = (
+      "🟢 GREEN (SPY > 200 SMA)"
+      if macro_regime_green
+      else "🔴 RED (SPY <= 200 SMA)"
+  )
+  open_count = len(trades_df[trades_df["Status"] == "Open"])
+  heartbeat_msg = (
+      f"🤖 *GoTrade Paper Bot: Daily Status Update*\n"
+      f"• *Date:* {today_str}\n"
+      f"• *Macro Gate:* {gate_str}\n"
+      f"• *Tracked Universe:* {', '.join(UNIVERSE)}\n"
+      f"• *Tranches Deployed:* {open_count}/4 active positions\n"
+      f"• *Action:* No exits or new entries triggered. All stop & target levels"
+      " remain intact."
+  )
+  send_telegram(heartbeat_msg)
+
+# ==============================================================================
+# 7. BUILD DYNAMIC README SCOREBOARD
 # ==============================================================================
 
 
