@@ -195,7 +195,11 @@ for idx in open_indices:
       exit_price = stop_loss
 
   if exit_status:
-    gross_pnl = (exit_price - entry_p) * (TRANCHE_USD / entry_p)
+    # Exact quantities for GoTrade order ticket
+    shares_owned = TRANCHE_USD / entry_p
+    market_value_usd = shares_owned * exit_price
+
+    gross_pnl = (exit_price - entry_p) * shares_owned
     fees = TRANCHE_USD * COMMISSION_ROUND_TRIP
     net_pnl = gross_pnl - fees
     ret_pct = (net_pnl / TRANCHE_USD) * 100.0
@@ -211,23 +215,24 @@ for idx in open_indices:
     )
     exits_triggered += 1
 
-    # OPTION 2: Clarified Alert Wording checking for existing same-ticker holdings
+    icon = "🟢" if net_pnl >= 0 else "🔴"
+    pnl_sign = "+" if net_pnl >= 0 else ""
+
+    # Check if another position in the same ticker is active
     other_open_in_same_ticker = any(
         (trades_df["Ticker"] == ticker)
         & (trades_df["Status"] == "Open")
         & (trades_df.index != idx)
     )
-    if other_open_in_same_ticker:
-      action_instruction = (
-          "SELL $42.50 TRANCHE (Do NOT tap 'Sell All' - other position in "
-          + ticker
-          + " is active!)"
-      )
-    else:
-      action_instruction = "SELL ALL SHARES (Market Sell 100%)"
 
-    icon = "🟢" if net_pnl >= 0 else "🔴"
-    pnl_sign = "+" if net_pnl >= 0 else ""
+    shared_ticker_note = ""
+    if other_open_in_same_ticker:
+      shared_ticker_note = (
+          "\n⚠️ *Note:* You have another open trade in "
+          + ticker
+          + ". Do NOT tap 'Sell 100%'. Use Method 1 or Method 2 below."
+      )
+
     exit_msg = (
         icon
         + " *EXIT ALERT: ["
@@ -236,24 +241,33 @@ for idx in open_indices:
         + "• *Ticker:* "
         + ticker
         + "\n"
-        + "• *Action:* "
-        + action_instruction
-        + "\n"
-        + "• *Exit Price:* $"
-        + str(round(exit_price, 2))
-        + "\n"
         + "• *Reason:* "
         + str(exit_status)
+        + " @ $"
+        + str(round(exit_price, 2))
         + "\n"
         + "• *Net P&L:* $"
         + pnl_sign
         + str(round(net_pnl, 2))
         + " ("
         + str(trades_df.loc[idx, "Return_Pct"])
-        + " net)\n"
-        + "_(GoTrade: Open Portfolio -> "
+        + " net after fees)\n"
+        + shared_ticker_note
+        + "\n"
+        + "📋 *WHAT TO DO ON GOTRADE AT 9:30 PM PHT:*\n"
+        + "1. Open GoTrade -> Portfolio -> *"
         + ticker
-        + " -> Sell $42.50 Tranche)_"
+        + "* -> Tap *Sell*\n"
+        + "2. Choose either method:\n"
+        + "   • *Method 1 (By Shares - Recommended):* Tap 'Shares' -> Enter *"
+        + str(round(shares_owned, 4))
+        + "* shares\n"
+        + "   • *Method 2 (By USD Amount):* Tap 'USD ($)' -> Enter *$"
+        + str(round(market_value_usd, 2))
+        + "*\n"
+        + "   • *(Or tap 'Sell 100%' if "
+        + ticker
+        + " is your only active trade)*"
     )
     send_telegram(exit_msg)
 
@@ -293,8 +307,7 @@ if macro_regime_green:
     high20 = float(latest["High20"])
     prev_rsi2 = float(prev["RSI2"])
 
-    # OPTION 1: Cross-Strategy Exclusion Rule
-    # Blocks entry if this ticker is currently held by ANY open position across ANY strategy
+    # Cross-Strategy Exclusion Rule
     is_already_held = any(
         (trades_df["Ticker"] == ticker) & (trades_df["Status"] == "Open")
     )
@@ -307,6 +320,7 @@ if macro_regime_green:
             if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
             else 1
         )
+        shares_to_buy = TRANCHE_USD / c
         new_row = {
             "Trade_ID": new_id,
             "Strategy": "RSI-2",
@@ -328,23 +342,29 @@ if macro_regime_green:
         )
         rsi2_open += 1
         entries_triggered += 1
-        is_already_held = (
-            True  # Instantly block Model B from buying this ticker today
-        )
+        is_already_held = True
 
         entry_msg = (
             "🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
             + "• *Ticker:* "
             + ticker
             + "\n"
-            + "• *Action:* BUY $42.50 USD (Market Buy)\n"
-            + "• *Price:* $"
+            + "• *Setup Price:* $"
             + str(round(c, 2))
             + " | RSI(2): "
             + str(round(prev_rsi2, 1))
             + "\n"
-            + "• *Target:* Close > 5 SMA | Hard Stop: -5.0%\n"
-            + "_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
+            + "• *Exit Target:* Close > 5 SMA | Hard Stop: -5.0%\n\n"
+            + "📋 *WHAT TO DO ON GOTRADE AT 9:30 PM PHT:*\n"
+            + "1. Open GoTrade -> Search *"
+            + ticker
+            + "* -> Tap *Buy*\n"
+            + "2. Select *Market Buy*\n"
+            + "3. Enter either:\n"
+            + "   • *Method 1 (Easiest):* Tap 'USD ($)' -> Enter *$42.50*\n"
+            + "   • *Method 2:* Tap 'Shares' -> Enter *"
+            + str(round(shares_to_buy, 4))
+            + "* shares"
         )
         send_telegram(entry_msg)
 
@@ -369,6 +389,7 @@ if macro_regime_green:
               if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
               else 1
           )
+          shares_to_buy = TRANCHE_USD / c
           new_row = {
               "Trade_ID": new_id,
               "Strategy": "Dual-Momentum",
@@ -403,7 +424,6 @@ if macro_regime_green:
               + "• *Ticker:* "
               + ticker
               + "\n"
-              + "• *Action:* BUY $42.50 USD (Market Buy)\n"
               + "• *Setup:* "
               + setup_type
               + " @ $"
@@ -411,10 +431,19 @@ if macro_regime_green:
               + "\n"
               + "• *Stop-Loss:* $"
               + str(stop_loss)
-              + " | *Target:* $"
+              + " | *Target (2R):* $"
               + str(target_val)
-              + "\n"
-              + "_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
+              + "\n\n"
+              + "📋 *WHAT TO DO ON GOTRADE AT 9:30 PM PHT:*\n"
+              + "1. Open GoTrade -> Search *"
+              + ticker
+              + "* -> Tap *Buy*\n"
+              + "2. Select *Market Buy*\n"
+              + "3. Enter either:\n"
+              + "   • *Method 1 (Easiest):* Tap 'USD ($)' -> Enter *$42.50*\n"
+              + "   • *Method 2:* Tap 'Shares' -> Enter *"
+              + str(round(shares_to_buy, 4))
+              + "* shares"
           )
           send_telegram(entry_msg)
 
