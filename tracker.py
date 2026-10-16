@@ -8,7 +8,7 @@ import pandas as pd
 import yfinance as yf
 
 # ==============================================================================
-# CONFIGURATION & UNIVERSE (EPHE INCLUDED)
+# CONFIGURATION & UNIVERSE (INCLUDES EPHE)
 # ==============================================================================
 UNIVERSE = ["QQQ", "SPY", "AAPL", "MSFT", "NVDA", "EPHE"]
 MACRO_TICKER = "SPY"
@@ -23,26 +23,28 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 
 def send_telegram(message):
-  """Sends structured alerts directly to Telegram."""
+  """Dispatches alert messages to Telegram without nested f-string complexity."""
   if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    print("Telegram tokens missing or not detected. Skipping message dispatch.")
+    print("Telegram credentials not configured. Skipping alert dispatch.")
     return False
-  url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+  endpoint = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
   payload = json.dumps({
       "chat_id": TELEGRAM_CHAT_ID,
       "text": message,
       "parse_mode": "Markdown",
   }).encode("utf-8")
+
   req = urllib.request.Request(
-      url, data=payload, headers={"Content-Type": "application/json"}
+      endpoint, data=payload, headers={"Content-Type": "application/json"}
   )
   try:
-    with urllib.request.urlopen(req, timeout=10) as response:
+    with urllib.request.urlopen(req, timeout=10) as resp:
       pass
-    print("Telegram notification delivered successfully.")
+    print("Telegram alert delivered successfully.")
     return True
   except Exception as e:
-    print(f"Failed to deliver Telegram notification: {e}")
+    print(f"Telegram dispatch error: {e}")
     return False
 
 
@@ -66,7 +68,7 @@ if not os.path.exists(CSV_FILE):
   ])
   df_init.to_csv(CSV_FILE, index=False)
 
-# 2. Load trades with explicit string schema
+# 2. Load trades with strict string schema
 trades_df = pd.read_csv(
     CSV_FILE,
     dtype={
@@ -84,9 +86,10 @@ trades_df = pd.read_csv(
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 
 # ==============================================================================
-# 3. FETCH HISTORICAL DATA & COMPUTE INDICATORS
+# 3. FETCH HISTORICAL DATA & COMPUTE TECHNICAL METRICS
 # ==============================================================================
-print(f"Fetching market data for universe: {UNIVERSE}...")
+universe_str = ", ".join(UNIVERSE)
+print(f"Fetching market data for universe: {universe_str}...")
 market_data = {}
 
 for ticker in UNIVERSE:
@@ -108,10 +111,10 @@ for ticker in UNIVERSE:
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1 / 2, min_periods=2, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1 / 2, min_periods=2, adjust=False).mean()
+    avg_gain = gain.ewm(alpha=0.5, min_periods=2, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=0.5, min_periods=2, adjust=False).mean()
     rs = avg_gain / avg_loss
-    df["RSI2"] = 100 - (100 / (1 + rs))
+    df["RSI2"] = 100.0 - (100.0 / (1.0 + rs))
 
     market_data[ticker] = df
   except Exception as e:
@@ -123,15 +126,17 @@ for ticker in UNIVERSE:
 macro_regime_green = False
 spy_close = 0.0
 spy_sma200 = 0.0
+
 if MACRO_TICKER in market_data:
   spy_latest = market_data[MACRO_TICKER].iloc[-1]
   spy_close = float(spy_latest["Close"])
   spy_sma200 = float(spy_latest["SMA200"])
   macro_regime_green = spy_close > spy_sma200
 
+gate_status = "GREEN" if macro_regime_green else "RED"
 print(
-    f"--- MACRO GATE: SPY ${spy_close:.2f} \vert{} 200 SMA:${spy_sma200:.2f} |"
-    f" Gate: {'GREEN' if macro_regime_green else 'RED'} ---"
+    f"--- MACRO GATE: SPY ${spy_close:.2f} \vert{} 200 SMA:${spy_sma200:.2f} | Gate:"
+    f" {gate_status} ---"
 )
 
 # ==============================================================================
@@ -188,7 +193,7 @@ for idx in open_indices:
     gross_pnl = (exit_price - entry_p) * (TRANCHE_USD / entry_p)
     fees = TRANCHE_USD * COMMISSION_ROUND_TRIP
     net_pnl = gross_pnl - fees
-    ret_pct = (net_pnl / TRANCHE_USD) * 100
+    ret_pct = (net_pnl / TRANCHE_USD) * 100.0
 
     trades_df.loc[idx, "Status"] = str(exit_status)
     trades_df.loc[idx, "Exit_Date"] = str(today_str)
@@ -353,24 +358,17 @@ if macro_regime_green:
 trades_df.to_csv(CSV_FILE, index=False)
 
 # ==============================================================================
-# 6. SEND DAILY TELEGRAM STATUS HEARTBEAT
+# 6. DAILY TELEGRAM HEARTBEAT
 # ==============================================================================
-# If no buys or sells fired today, send a heartbeat so you know the bot is alive
 if exits_triggered == 0 and entries_triggered == 0:
-  gate_str = (
-      "🟢 GREEN (SPY > 200 SMA)"
-      if macro_regime_green
-      else "🔴 RED (SPY <= 200 SMA)"
-  )
   open_count = len(trades_df[trades_df["Status"] == "Open"])
   heartbeat_msg = (
       f"🤖 *GoTrade Paper Bot: Daily Status Update*\n"
       f"• *Date:* {today_str}\n"
-      f"• *Macro Gate:* {gate_str}\n"
-      f"• *Tracked Universe:* {', '.join(UNIVERSE)}\n"
+      f"• *Macro Gate:* {gate_status}\n"
+      f"• *Tracked Universe:* {universe_str}\n"
       f"• *Tranches Deployed:* {open_count}/4 active positions\n"
-      f"• *Action:* No exits or new entries triggered. All stop & target levels"
-      " remain intact."
+      f"• *Action:* No exits or entries triggered. All stop/target levels intact."
   )
   send_telegram(heartbeat_msg)
 
@@ -395,7 +393,7 @@ def calc_metrics(strat_name):
   pnl_series = pd.to_numeric(subset["Net_PnL"], errors="coerce").dropna()
   wins = pnl_series[pnl_series > 0]
   losses = pnl_series[pnl_series < 0]
-  wr = f"{(len(wins) / total) * 100:.1f}% ({len(wins)}/{total})"
+  wr = f"{(len(wins) / total) * 100.0:.1f}% ({len(wins)}/{total})"
   net_pnl = f"${pnl_series.sum():+.2f}"
   pf = (
       f"{wins.sum() / abs(losses.sum()):.2f}"
@@ -431,9 +429,19 @@ gate_badge = (
     else "🔴 **RED (Paused - Cash Protected)**"
 )
 
+m_rsi_total = m_rsi["total"]
+m_rsi_wr = m_rsi["wr"]
+m_rsi_pf = m_rsi["pf"]
+m_rsi_pnl = m_rsi["pnl"]
+
+m_mom_total = m_mom["total"]
+m_mom_wr = m_mom["wr"]
+m_mom_pf = m_mom["pf"]
+m_mom_pnl = m_mom["pnl"]
+
 readme_content = f"""# 30-Day Forward Paper Trading Arena (GoTrade Setup)
 
-Simulating automated swing trades across **{', '.join(UNIVERSE)}** with live US market feeds.
+Simulating automated swing trades across **{universe_str}** with live US market feeds.
 
 ### Macro Market Regime Gate: {gate_badge}
 *New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day Simple Moving Average.*
@@ -446,10 +454,10 @@ Simulating automated swing trades across **{', '.join(UNIVERSE)}** with live US 
 | :--- | :--- | :--- |
 | **Philosophy** | Mean Reversion (Buy Oversold Panics) | Trend-Following (Breakouts & Pullbacks) |
 | **Virtual Capital** | $85.00 USD (2x $42.50 tranches) | $85.00 USD (2x $42.50 tranches) |
-| **Total Closed Trades** | {m_rsi['total']} | {m_mom['total']} |
-| **Win Rate %** | {m_rsi['wr']} | {m_mom['wr']} |
-| **Profit Factor** | {m_rsi['pf']} | {m_mom['pf']} |
-| **Cumulative Net P&L** | **{m_rsi['pnl']} USD** | **{m_mom['pnl']} USD** |
+| **Total Closed Trades** | {m_rsi_total} | {m_mom_total} |
+| **Win Rate %** | {m_rsi_wr} | {m_mom_wr} |
+| **Profit Factor** | {m_rsi_pf} | {m_mom_pf} |
+| **Cumulative Net P&L** | **{m_rsi_pnl} USD** | **{m_mom_pnl} USD** |
 
 *All results deduct GoTrade's 0.60% round-trip commission friction (0.30% buy + 0.30% sell).*
 
