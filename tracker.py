@@ -1,17 +1,48 @@
 import datetime
+import json
 import os
+import urllib.parse
+import urllib.request
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
 # ==============================================================================
-# CONFIGURATION & UNIVERSE
+# CONFIGURATION & UNIVERSE (VIEWPOINT 1: EPHE INCLUDED)
 # ==============================================================================
-UNIVERSE = ["QQQ", "SPY", "AAPL", "MSFT", "NVDA"]
-COMMISSION_ROUND_TRIP = 0.0060  # 0.30% buy + 0.30% sell (GoTrade schedule)
+UNIVERSE = ["QQQ", "SPY", "AAPL", "MSFT", "NVDA", "EPHE"]
+MACRO_TICKER = "SPY"
+COMMISSION_ROUND_TRIP = 0.0060  # 0.30% buy + 0.30% sell (GoTrade)
 TRANCHE_USD = 42.50
 MAX_TRANCHES_PER_STRATEGY = 2
 CSV_FILE = "trades.csv"
+
+# Telegram Secrets
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+
+def send_telegram(message):
+  """Sends structured trading alerts directly to Telegram."""
+  if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    print("Telegram tokens not detected. Skipping message dispatch.")
+    return
+  url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+  payload = json.dumps({
+      "chat_id": TELEGRAM_CHAT_ID,
+      "text": message,
+      "parse_mode": "Markdown",
+  }).encode("utf-8")
+  req = urllib.request.Request(
+      url, data=payload, headers={"Content-Type": "application/json"}
+  )
+  try:
+    with urllib.request.urlopen(req, timeout=10) as response:
+      pass
+    print("Telegram notification delivered successfully.")
+  except Exception as e:
+    print(f"Failed to deliver Telegram notification: {e}")
+
 
 # 1. Initialize CSV structure if not present
 if not os.path.exists(CSV_FILE):
@@ -33,7 +64,7 @@ if not os.path.exists(CSV_FILE):
   ])
   df_init.to_csv(CSV_FILE, index=False)
 
-# 2. Load trades with explicit string dtypes to prevent float64 casting errors on empty cells
+# 2. Load trades with explicit string schema
 trades_df = pd.read_csv(
     CSV_FILE,
     dtype={
@@ -51,7 +82,7 @@ trades_df = pd.read_csv(
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 
 # ==============================================================================
-# 3. FETCH HISTORICAL MARKET DATA FOR THE UNIVERSE
+# 3. FETCH HISTORICAL DATA & COMPUTE INDICATORS
 # ==============================================================================
 print(f"Fetching market data for universe: {UNIVERSE}...")
 market_data = {}
@@ -63,7 +94,7 @@ for ticker in UNIVERSE:
       df = df.xs(ticker, level=1, axis=1)
     df = df.dropna().copy()
 
-    # Core Technical Indicators
+    # Technical Indicators
     df["SMA200"] = df["Close"].rolling(200).mean()
     df["SMA5"] = df["Close"].rolling(5).mean()
     df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
@@ -71,7 +102,7 @@ for ticker in UNIVERSE:
     df["Vol_SMA20"] = df["Volume"].rolling(20).mean()
     df["High20"] = df["High"].shift(1).rolling(20).max()
 
-    # 2-period RSI (Wilder's Smoothing)
+    # Wilder's 2-period RSI
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -83,6 +114,21 @@ for ticker in UNIVERSE:
     market_data[ticker] = df
   except Exception as e:
     print(f"Error loading {ticker}: {e}")
+
+# ==============================================================================
+# VIEWPOINT 2: MACRO REGIME GATE (SPY > 200 SMA)
+# ==============================================================================
+macro_regime_green = False
+if MACRO_TICKER in market_data:
+  spy_latest = market_data[MACRO_TICKER].iloc[-1]
+  spy_close = float(spy_latest["Close"])
+  spy_sma200 = float(spy_latest["SMA200"])
+  macro_regime_green = spy_close > spy_sma200
+  print(
+      f"--- MACRO GATE CHECK: SPY Close: ${spy_close:.2f} | 200 SMA:"
+      f" ${spy_sma200:.2f} | Gate: {'GREEN' if macro_regime_green else 'RED'}"
+      " ---"
+  )
 
 # ==============================================================================
 # 4. EVALUATE EXITS ON OPEN POSITIONS
@@ -146,13 +192,22 @@ for idx in open_indices:
     trades_df.loc[idx, "Fees_USD"] = round(fees, 2)
     trades_df.loc[idx, "Net_PnL"] = round(net_pnl, 2)
     trades_df.loc[idx, "Return_Pct"] = f"{ret_pct:+.2f}%"
-    print(
-        f"-> EXITED [{strategy}] {ticker}: {exit_status} @ ${exit_price:.2f}"
-        f" (Net: ${net_pnl:+.2f})"
+
+    # Send Telegram Exit Alert
+    icon = "🟢" if net_pnl >= 0 else "🔴"
+    exit_msg = (
+        f"{icon} *EXIT ALERT: [{strategy}]*\n"
+        f"• *Ticker:* {ticker}\n"
+        f"• *Action:* SELL ALL SHARES (Market Sell)\n"
+        f"• *Exit Price:* ${exit_price:.2f}\n"
+        f"• *Reason:* {exit_status}\n"
+        f"• *Net P&L:* ${net_pnl:+.2f} ({ret_pct:+.2f}% net)\n"
+        f"_(GoTrade: Open Portfolio -> {ticker} -> Market Sell 100%)_"
     )
+    send_telegram(exit_msg)
 
 # ==============================================================================
-# 5. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE
+# 5. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE (GATED BY MACRO)
 # ==============================================================================
 rsi2_open = len(
     trades_df[
@@ -166,82 +221,39 @@ mom_open = len(
     ]
 )
 
-for ticker, df in market_data.items():
-  if len(df) < 200:
-    continue
+if not macro_regime_green:
+  print(
+      "-> MACRO REGIME IS RED (SPY <= 200 SMA). New entries paused to protect"
+      " capital."
+  )
+else:
+  for ticker, df in market_data.items():
+    if len(df) < 200:
+      continue
 
-  latest = df.iloc[-1]
-  prev = df.iloc[-2]
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
 
-  c = float(latest["Close"])
-  o = float(latest["Open"])
-  low_c = float(latest["Low"])
-  vol = float(latest["Volume"])
+    c = float(latest["Close"])
+    o = float(latest["Open"])
+    low_c = float(latest["Low"])
+    vol = float(latest["Volume"])
 
-  sma200 = float(latest["SMA200"])
-  ema20 = float(latest["EMA20"])
-  ema50 = float(latest["EMA50"])
-  vol_sma20 = float(latest["Vol_SMA20"])
-  high20 = float(latest["High20"])
-  prev_rsi2 = float(prev["RSI2"])
+    sma200 = float(latest["SMA200"])
+    ema20 = float(latest["EMA20"])
+    ema50 = float(latest["EMA50"])
+    vol_sma20 = float(latest["Vol_SMA20"])
+    high20 = float(latest["High20"])
+    prev_rsi2 = float(prev["RSI2"])
 
-  # --- MODEL A: RSI-2 Dip Setup ---
-  if rsi2_open < MAX_TRANCHES_PER_STRATEGY:
-    already_holding = any(
-        (trades_df["Strategy"] == "RSI-2")
-        & (trades_df["Ticker"] == ticker)
-        & (trades_df["Status"] == "Open")
-    )
-    if not already_holding and (c > sma200) and (prev_rsi2 < 10.0):
-      new_id = (
-          int(trades_df["Trade_ID"].max()) + 1
-          if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
-          else 1
+    # --- MODEL A: RSI-2 Dip Setup ---
+    if rsi2_open < MAX_TRANCHES_PER_STRATEGY:
+      already_holding = any(
+          (trades_df["Strategy"] == "RSI-2")
+          & (trades_df["Ticker"] == ticker)
+          & (trades_df["Status"] == "Open")
       )
-      new_row = {
-          "Trade_ID": new_id,
-          "Strategy": "RSI-2",
-          "Ticker": ticker,
-          "Status": "Open",
-          "Entry_Date": today_str,
-          "Entry_Price": round(c, 2),
-          "Exit_Date": "",
-          "Exit_Price": np.nan,
-          "Tranche_USD": TRANCHE_USD,
-          "Gross_PnL": np.nan,
-          "Fees_USD": np.nan,
-          "Net_PnL": np.nan,
-          "Return_Pct": "",
-          "Notes": f"RSI2: {prev_rsi2:.1f}",
-      }
-      trades_df = pd.concat(
-          [trades_df, pd.DataFrame([new_row])], ignore_index=True
-      )
-      rsi2_open += 1
-      print(f"-> ENTERED [RSI-2] {ticker} @ ${c:.2f} (RSI2: {prev_rsi2:.1f})")
-
-  # --- MODEL B: Dual Momentum Setup ---
-  if mom_open < MAX_TRANCHES_PER_STRATEGY:
-    already_holding_mom = any(
-        (trades_df["Strategy"] == "Dual-Momentum")
-        & (trades_df["Ticker"] == ticker)
-        & (trades_df["Status"] == "Open")
-    )
-    if not already_holding_mom and (c > ema50):
-      is_breakout = (c >= high20) and (vol >= 1.75 * vol_sma20)
-      is_pullback = (low_c <= ema20) and (c > ema20) and (c > o)
-
-      if is_breakout or is_pullback:
-        raw_risk = c - low_c
-        if (raw_risk / c > 0.06) or (raw_risk <= 0):
-          stop_loss = round(c * 0.94, 2)
-        else:
-          stop_loss = round(low_c, 2)
-
-        risk_val = c - stop_loss
-        target_val = round(c + (2.0 * risk_val), 2)
-        setup_type = "Breakout" if is_breakout else "Pullback"
-
+      if not already_holding and (c > sma200) and (prev_rsi2 < 10.0):
         new_id = (
             int(trades_df["Trade_ID"].max()) + 1
             if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
@@ -249,7 +261,7 @@ for ticker, df in market_data.items():
         )
         new_row = {
             "Trade_ID": new_id,
-            "Strategy": "Dual-Momentum",
+            "Strategy": "RSI-2",
             "Ticker": ticker,
             "Status": "Open",
             "Entry_Date": today_str,
@@ -261,13 +273,83 @@ for ticker, df in market_data.items():
             "Fees_USD": np.nan,
             "Net_PnL": np.nan,
             "Return_Pct": "",
-            "Notes": f"Stop:{stop_loss} | Target:{target_val} | {setup_type}",
+            "Notes": f"RSI2: {prev_rsi2:.1f}",
         }
         trades_df = pd.concat(
             [trades_df, pd.DataFrame([new_row])], ignore_index=True
         )
-        mom_open += 1
-        print(f"-> ENTERED [Dual-Momentum] {ticker} ({setup_type}) @ ${c:.2f}")
+        rsi2_open += 1
+
+        # Send Telegram Entry Alert
+        entry_msg = (
+            f"🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
+            f"• *Ticker:* {ticker}\n"
+            f"• *Action:* BUY $42.50 USD (Market Buy)\n"
+            f"• *Current Price:* ${c:.2f}\n"
+            f"• *Condition:* 2-Period RSI @ {prev_rsi2:.1f} (Oversold)\n"
+            f"• *Target:* Close > 5 SMA | Hard Stop: -5.0%\n"
+            f"_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
+        )
+        send_telegram(entry_msg)
+
+    # --- MODEL B: Dual Momentum Setup ---
+    if mom_open < MAX_TRANCHES_PER_STRATEGY:
+      already_holding_mom = any(
+          (trades_df["Strategy"] == "Dual-Momentum")
+          & (trades_df["Ticker"] == ticker)
+          & (trades_df["Status"] == "Open")
+      )
+      if not already_holding_mom and (c > ema50):
+        is_breakout = (c >= high20) and (vol >= 1.75 * vol_sma20)
+        is_pullback = (low_c <= ema20) and (c > ema20) and (c > o)
+
+        if is_breakout or is_pullback:
+          raw_risk = c - low_c
+          if (raw_risk / c > 0.06) or (raw_risk <= 0):
+            stop_loss = round(c * 0.94, 2)
+          else:
+            stop_loss = round(low_c, 2)
+
+          risk_val = c - stop_loss
+          target_val = round(c + (2.0 * risk_val), 2)
+          setup_type = "Breakout" if is_breakout else "Pullback"
+
+          new_id = (
+              int(trades_df["Trade_ID"].max()) + 1
+              if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
+              else 1
+          )
+          new_row = {
+              "Trade_ID": new_id,
+              "Strategy": "Dual-Momentum",
+              "Ticker": ticker,
+              "Status": "Open",
+              "Entry_Date": today_str,
+              "Entry_Price": round(c, 2),
+              "Exit_Date": "",
+              "Exit_Price": np.nan,
+              "Tranche_USD": TRANCHE_USD,
+              "Gross_PnL": np.nan,
+              "Fees_USD": np.nan,
+              "Net_PnL": np.nan,
+              "Return_Pct": "",
+              "Notes": f"Stop:{stop_loss} | Target:{target_val} | {setup_type}",
+          }
+          trades_df = pd.concat(
+              [trades_df, pd.DataFrame([new_row])], ignore_index=True
+          )
+          mom_open += 1
+
+          # Send Telegram Entry Alert
+          entry_msg = (
+              f"🚀 *ENTRY ALERT: [Dual-Momentum]*\n"
+              f"• *Ticker:* {ticker}\n"
+              f"• *Action:* BUY $42.50 USD (Market Buy)\n"
+              f"• *Setup:* {setup_type} @ ${c:.2f}\n"
+              f"• *Stop-Loss:* ${stop_loss:.2f} \vert{} *Target (2R):*${target_val:.2f}\n"
+              f"_(GoTrade: Open App at 9:30 PM PHT -> Market Buy $42.50)_"
+          )
+          send_telegram(entry_msg)
 
 trades_df.to_csv(CSV_FILE, index=False)
 
@@ -322,9 +404,20 @@ closed_trades_table = (
     else "_No closed trades yet._"
 )
 
+gate_badge = (
+    "🟢 **GREEN (Active)**"
+    if macro_regime_green
+    else "🔴 **RED (Paused - Cash Protected)**"
+)
+
 readme_content = f"""# 30-Day Forward Paper Trading Arena (GoTrade Setup)
 
 Simulating automated swing trades across **{', '.join(UNIVERSE)}** with live US market feeds.
+
+### Macro Market Regime Gate: {gate_badge}
+*New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day Simple Moving Average.*
+
+---
 
 ### Comparative Strategy Scoreboard
 
