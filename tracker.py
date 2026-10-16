@@ -211,6 +211,21 @@ for idx in open_indices:
     )
     exits_triggered += 1
 
+    # OPTION 2: Clarified Alert Wording checking for existing same-ticker holdings
+    other_open_in_same_ticker = any(
+        (trades_df["Ticker"] == ticker)
+        & (trades_df["Status"] == "Open")
+        & (trades_df.index != idx)
+    )
+    if other_open_in_same_ticker:
+      action_instruction = (
+          "SELL $42.50 TRANCHE (Do NOT tap 'Sell All' - other position in "
+          + ticker
+          + " is active!)"
+      )
+    else:
+      action_instruction = "SELL ALL SHARES (Market Sell 100%)"
+
     icon = "🟢" if net_pnl >= 0 else "🔴"
     pnl_sign = "+" if net_pnl >= 0 else ""
     exit_msg = (
@@ -221,7 +236,9 @@ for idx in open_indices:
         + "• *Ticker:* "
         + ticker
         + "\n"
-        + "• *Action:* SELL ALL SHARES (Market Sell)\n"
+        + "• *Action:* "
+        + action_instruction
+        + "\n"
         + "• *Exit Price:* $"
         + str(round(exit_price, 2))
         + "\n"
@@ -236,12 +253,12 @@ for idx in open_indices:
         + " net)\n"
         + "_(GoTrade: Open Portfolio -> "
         + ticker
-        + " -> Market Sell 100%)_"
+        + " -> Sell $42.50 Tranche)_"
     )
     send_telegram(exit_msg)
 
 # ==============================================================================
-# 5. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE (GATED BY MACRO)
+# 5. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE (GATED BY MACRO & EXCLUSION)
 # ==============================================================================
 rsi2_open = len(
     trades_df[
@@ -276,14 +293,15 @@ if macro_regime_green:
     high20 = float(latest["High20"])
     prev_rsi2 = float(prev["RSI2"])
 
+    # OPTION 1: Cross-Strategy Exclusion Rule
+    # Blocks entry if this ticker is currently held by ANY open position across ANY strategy
+    is_already_held = any(
+        (trades_df["Ticker"] == ticker) & (trades_df["Status"] == "Open")
+    )
+
     # Model A: RSI-2 Dip
-    if rsi2_open < MAX_TRANCHES_PER_STRATEGY:
-      already_holding = any(
-          (trades_df["Strategy"] == "RSI-2")
-          & (trades_df["Ticker"] == ticker)
-          & (trades_df["Status"] == "Open")
-      )
-      if not already_holding and (c > sma200) and (prev_rsi2 < 10.0):
+    if rsi2_open < MAX_TRANCHES_PER_STRATEGY and not is_already_held:
+      if (c > sma200) and (prev_rsi2 < 10.0):
         new_id = (
             int(trades_df["Trade_ID"].max()) + 1
             if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
@@ -310,6 +328,9 @@ if macro_regime_green:
         )
         rsi2_open += 1
         entries_triggered += 1
+        is_already_held = (
+            True  # Instantly block Model B from buying this ticker today
+        )
 
         entry_msg = (
             "🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
@@ -328,13 +349,8 @@ if macro_regime_green:
         send_telegram(entry_msg)
 
     # Model B: Dual Momentum
-    if mom_open < MAX_TRANCHES_PER_STRATEGY:
-      already_holding_mom = any(
-          (trades_df["Strategy"] == "Dual-Momentum")
-          & (trades_df["Ticker"] == ticker)
-          & (trades_df["Status"] == "Open")
-      )
-      if not already_holding_mom and (c > ema50):
+    if mom_open < MAX_TRANCHES_PER_STRATEGY and not is_already_held:
+      if c > ema50:
         is_breakout = (c >= high20) and (vol >= 1.75 * vol_sma20)
         is_pullback = (low_c <= ema20) and (c > ema20) and (c > o)
 
