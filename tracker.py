@@ -12,9 +12,11 @@ import yfinance as yf
 # ==============================================================================
 UNIVERSE = ["QQQ", "SPY", "AAPL", "MSFT", "NVDA", "EPHE"]
 MACRO_TICKER = "SPY"
+VIX_TICKER = "^VIX"
 COMMISSION_ROUND_TRIP = 0.0060  # 0.30% buy + 0.30% sell (GoTrade)
-TRANCHE_USD = 42.50
+BASE_TRANCHE_USD = 42.50
 MAX_TRANCHES_PER_STRATEGY = 2
+MAX_PORTFOLIO_DRAWDOWN_USD = -8.50  # Drawdown Circuit Breaker: -10% of $85
 CSV_FILE = "trades.csv"
 
 # Telegram Secrets
@@ -46,6 +48,40 @@ def send_telegram(message):
   except Exception as e:
     print("Telegram dispatch error: " + str(e))
     return False
+
+
+def is_earnings_blackout(ticker):
+  """Earnings Blackout Gate: skips single stocks reporting within 3 days."""
+  if ticker in ["QQQ", "SPY", "EPHE"]:
+    return False, "ETF (No Earnings)"
+  try:
+    t = yf.Ticker(ticker)
+    cal = t.calendar
+    earnings_date = None
+    if isinstance(cal, dict) and "Earnings Date" in cal:
+      ed = cal["Earnings Date"]
+      if isinstance(ed, list) and len(ed) > 0:
+        earnings_date = pd.to_datetime(ed[0]).date()
+      elif isinstance(ed, (datetime.date, datetime.datetime)):
+        earnings_date = pd.to_datetime(ed).date()
+    elif isinstance(cal, pd.DataFrame) and not cal.empty:
+      if "Earnings Date" in cal.index:
+        val = cal.loc["Earnings Date"].iloc[0]
+        earnings_date = pd.to_datetime(val).date()
+
+    if earnings_date:
+      days_diff = (earnings_date - datetime.date.today()).days
+      if 0 <= days_diff <= 3:
+        return True, (
+            "Earnings in "
+            + str(days_diff)
+            + " days ("
+            + str(earnings_date)
+            + ")"
+        )
+    return False, "Clear"
+  except Exception:
+    return False, "Clear (Data Fallback)"
 
 
 # 1. Initialize CSV structure if not present
@@ -86,21 +122,59 @@ trades_df = pd.read_csv(
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 
 # ==============================================================================
-# 3. FETCH HISTORICAL DATA & COMPUTE TECHNICAL METRICS
+# 3. EXPOSURE COACH & DRAWDOWN CIRCUIT BREAKER
 # ==============================================================================
+closed_trades_history = trades_df[
+    trades_df["Status"].isin(
+        ["Target Hit (5 SMA)", "Target Hit (2R)", "Stop Hit"]
+    )
+].copy()
+
+# A. Drawdown Circuit Breaker (-10% cap)
+total_closed_pnl = 0.0
+if not closed_trades_history.empty:
+  numeric_pnl = pd.to_numeric(
+      closed_trades_history["Net_PnL"], errors="coerce"
+  ).dropna()
+  total_closed_pnl = float(numeric_pnl.sum())
+
+circuit_breaker_active = total_closed_pnl <= MAX_PORTFOLIO_DRAWDOWN_USD
+
+# B. Exposure Coach (Dynamic Sizing)
+tranche_usd = BASE_TRANCHE_USD
+exposure_coach_reduced = False
+
+if len(closed_trades_history) >= 2:
+  last_two = closed_trades_history.tail(2)
+  last_two_pnl = pd.to_numeric(last_two["Net_PnL"], errors="coerce").dropna()
+  if len(last_two_pnl) == 2 and all(last_two_pnl < 0):
+    tranche_usd = round(BASE_TRANCHE_USD * 0.50, 2)  # Cut by 50% to $21.25
+    exposure_coach_reduced = True
+
+# ==============================================================================
+# 4. FETCH HISTORICAL DATA & COMPUTE TECHNICAL METRICS
+# ==============================================================================
+fetch_list = list(UNIVERSE) + [VIX_TICKER]
 universe_str = ", ".join(UNIVERSE)
-print("Fetching market data for universe: " + universe_str + "...")
+print(
+    "Fetching market data for universe: "
+    + universe_str
+    + " and "
+    + VIX_TICKER
+    + "..."
+)
 market_data = {}
 
-for ticker in UNIVERSE:
+for ticker in fetch_list:
   try:
     df = yf.download(ticker, period="1y", interval="1d", progress=False)
     if isinstance(df.columns, pd.MultiIndex):
       df = df.xs(ticker, level=1, axis=1)
     df = df.dropna().copy()
 
-    # Technical Indicators
+    # Core Technical Indicators
     df["SMA200"] = df["Close"].rolling(200).mean()
+    df["SMA50"] = df["Close"].rolling(50).mean()
     df["SMA5"] = df["Close"].rolling(5).mean()
     df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
     df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
@@ -121,31 +195,52 @@ for ticker in UNIVERSE:
     print("Error loading " + str(ticker) + ": " + str(e))
 
 # ==============================================================================
-# MACRO REGIME GATE CHECK (SPY > 200 SMA)
+# MACRO REGIME & VIX VOLATILITY GATE (SPY > 200 SMA AND VIX < 25)
 # ==============================================================================
-macro_regime_green = False
+spy_above_sma200 = False
+vix_calm = False
 spy_close = 0.0
 spy_sma200 = 0.0
+vix_close = 0.0
 
 if MACRO_TICKER in market_data:
   spy_latest = market_data[MACRO_TICKER].iloc[-1]
   spy_close = float(spy_latest["Close"])
   spy_sma200 = float(spy_latest["SMA200"])
-  macro_regime_green = spy_close > spy_sma200
+  spy_above_sma200 = spy_close > spy_sma200
 
-gate_status = "GREEN" if macro_regime_green else "RED"
+if VIX_TICKER in market_data:
+  vix_latest = market_data[VIX_TICKER].iloc[-1]
+  vix_close = float(vix_latest["Close"])
+  vix_calm = vix_close < 25.0
+
+macro_regime_green = (
+    spy_above_sma200 and vix_calm and not circuit_breaker_active
+)
+
+if circuit_breaker_active:
+  gate_status = "RED (Circuit Breaker Tripped: -$8.50 hit)"
+elif not spy_above_sma200:
+  gate_status = "RED (SPY <= 200 SMA)"
+elif not vix_calm:
+  gate_status = "RED (VIX >= 25.0 High Volatility)"
+else:
+  gate_status = "GREEN"
+
 print(
     "--- MACRO GATE: SPY $"
     + str(round(spy_close, 2))
     + " | 200 SMA: $"
     + str(round(spy_sma200, 2))
+    + " | VIX: "
+    + str(round(vix_close, 2))
     + " | Gate: "
     + gate_status
     + " ---"
 )
 
 # ==============================================================================
-# 4. EVALUATE EXITS ON OPEN POSITIONS
+# 5. EVALUATE EXITS ON OPEN POSITIONS
 # ==============================================================================
 open_indices = trades_df[trades_df["Status"] == "Open"].index
 exits_triggered = 0
@@ -154,6 +249,11 @@ for idx in open_indices:
   strategy = str(trades_df.loc[idx, "Strategy"])
   ticker = str(trades_df.loc[idx, "Ticker"])
   entry_p = float(trades_df.loc[idx, "Entry_Price"])
+  allocated_tranche = (
+      float(trades_df.loc[idx, "Tranche_USD"])
+      if pd.notna(trades_df.loc[idx, "Tranche_USD"])
+      else BASE_TRANCHE_USD
+  )
 
   if ticker not in market_data:
     continue
@@ -195,14 +295,25 @@ for idx in open_indices:
       exit_price = stop_loss
 
   if exit_status:
-    # Exact quantities for GoTrade order ticket
-    shares_owned = TRANCHE_USD / entry_p
+    shares_owned = allocated_tranche / entry_p
     market_value_usd = shares_owned * exit_price
 
     gross_pnl = (exit_price - entry_p) * shares_owned
-    fees = TRANCHE_USD * COMMISSION_ROUND_TRIP
+    fees = allocated_tranche * COMMISSION_ROUND_TRIP
     net_pnl = gross_pnl - fees
-    ret_pct = (net_pnl / TRANCHE_USD) * 100.0
+    ret_pct = (net_pnl / allocated_tranche) * 100.0
+
+    # Post-Mortem Taxonomy Tagging
+    post_mortem_tag = "Target Reached"
+    if "Stop" in str(exit_status):
+      if vix_close >= 22.0:
+        post_mortem_tag = (
+            "High Volatility Drag (VIX " + str(round(vix_close, 1)) + ")"
+        )
+      elif not spy_above_sma200:
+        post_mortem_tag = "Macro Downtrend Drag"
+      else:
+        post_mortem_tag = "Technical Whipsaw"
 
     trades_df.loc[idx, "Status"] = str(exit_status)
     trades_df.loc[idx, "Exit_Date"] = str(today_str)
@@ -212,6 +323,14 @@ for idx in open_indices:
     trades_df.loc[idx, "Net_PnL"] = round(net_pnl, 2)
     trades_df.loc[idx, "Return_Pct"] = (
         ("+" if ret_pct >= 0 else "") + str(round(ret_pct, 2)) + "%"
+    )
+    existing_notes = (
+        str(trades_df.loc[idx, "Notes"])
+        if pd.notna(trades_df.loc[idx, "Notes"])
+        else ""
+    )
+    trades_df.loc[idx, "Notes"] = (
+        existing_notes + " | PostMortem: " + post_mortem_tag
     )
     exits_triggered += 1
 
@@ -245,7 +364,9 @@ for idx in open_indices:
         + str(exit_status)
         + " @ $"
         + str(round(exit_price, 2))
-        + "\n"
+        + " ("
+        + post_mortem_tag
+        + ")\n"
         + "• *Net P&L:* $"
         + pnl_sign
         + str(round(net_pnl, 2))
@@ -272,7 +393,7 @@ for idx in open_indices:
     send_telegram(exit_msg)
 
 # ==============================================================================
-# 5. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE (GATED BY MACRO & EXCLUSION)
+# 6. EVALUATE NEW ENTRIES ACROSS THE UNIVERSE (GATED BY MACRO, VIX, EARNINGS)
 # ==============================================================================
 rsi2_open = len(
     trades_df[
@@ -289,7 +410,7 @@ entries_triggered = 0
 
 if macro_regime_green:
   for ticker, df in market_data.items():
-    if len(df) < 200:
+    if ticker == VIX_TICKER or len(df) < 200:
       continue
 
     latest = df.iloc[-1]
@@ -312,6 +433,17 @@ if macro_regime_green:
         (trades_df["Ticker"] == ticker) & (trades_df["Status"] == "Open")
     )
 
+    # Earnings Blackout Gate Check
+    has_earnings_conflict, earnings_desc = is_earnings_blackout(ticker)
+    if has_earnings_conflict:
+      print(
+          "-> Skipping "
+          + ticker
+          + " due to Earnings Blackout: "
+          + earnings_desc
+      )
+      continue
+
     # Model A: RSI-2 Dip
     if rsi2_open < MAX_TRANCHES_PER_STRATEGY and not is_already_held:
       if (c > sma200) and (prev_rsi2 < 10.0):
@@ -320,7 +452,10 @@ if macro_regime_green:
             if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
             else 1
         )
-        shares_to_buy = TRANCHE_USD / c
+        shares_to_buy = tranche_usd / c
+        coach_note = (
+            " (Exposure Coach: 50% Sized)" if exposure_coach_reduced else ""
+        )
         new_row = {
             "Trade_ID": new_id,
             "Strategy": "RSI-2",
@@ -330,12 +465,12 @@ if macro_regime_green:
             "Entry_Price": round(c, 2),
             "Exit_Date": "",
             "Exit_Price": np.nan,
-            "Tranche_USD": TRANCHE_USD,
+            "Tranche_USD": tranche_usd,
             "Gross_PnL": np.nan,
             "Fees_USD": np.nan,
             "Net_PnL": np.nan,
             "Return_Pct": "",
-            "Notes": "RSI2: " + str(round(prev_rsi2, 1)),
+            "Notes": "RSI2: " + str(round(prev_rsi2, 1)) + coach_note,
         }
         trades_df = pd.concat(
             [trades_df, pd.DataFrame([new_row])], ignore_index=True
@@ -345,7 +480,9 @@ if macro_regime_green:
         is_already_held = True
 
         entry_msg = (
-            "🛒 *ENTRY ALERT: [RSI-2 Dip]*\n"
+            "🛒 *ENTRY ALERT: [RSI-2 Dip]*"
+            + coach_note
+            + "\n"
             + "• *Ticker:* "
             + ticker
             + "\n"
@@ -361,7 +498,9 @@ if macro_regime_green:
             + "* -> Tap *Buy*\n"
             + "2. Select *Market Buy*\n"
             + "3. Enter either:\n"
-            + "   • *Method 1 (Easiest):* Tap 'USD ($)' -> Enter *$42.50*\n"
+            + "   • *Method 1 (Easiest):* Tap 'USD ($)' -> Enter *$"
+            + str(round(tranche_usd, 2))
+            + "*\n"
             + "   • *Method 2:* Tap 'Shares' -> Enter *"
             + str(round(shares_to_buy, 4))
             + "* shares"
@@ -389,7 +528,10 @@ if macro_regime_green:
               if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())
               else 1
           )
-          shares_to_buy = TRANCHE_USD / c
+          shares_to_buy = tranche_usd / c
+          coach_note = (
+              " (Exposure Coach: 50% Sized)" if exposure_coach_reduced else ""
+          )
           new_row = {
               "Trade_ID": new_id,
               "Strategy": "Dual-Momentum",
@@ -399,7 +541,7 @@ if macro_regime_green:
               "Entry_Price": round(c, 2),
               "Exit_Date": "",
               "Exit_Price": np.nan,
-              "Tranche_USD": TRANCHE_USD,
+              "Tranche_USD": tranche_usd,
               "Gross_PnL": np.nan,
               "Fees_USD": np.nan,
               "Net_PnL": np.nan,
@@ -411,6 +553,7 @@ if macro_regime_green:
                   + str(target_val)
                   + " | "
                   + setup_type
+                  + coach_note
               ),
           }
           trades_df = pd.concat(
@@ -420,7 +563,9 @@ if macro_regime_green:
           entries_triggered += 1
 
           entry_msg = (
-              "🚀 *ENTRY ALERT: [Dual-Momentum]*\n"
+              "🚀 *ENTRY ALERT: [Dual-Momentum]*"
+              + coach_note
+              + "\n"
               + "• *Ticker:* "
               + ticker
               + "\n"
@@ -440,7 +585,9 @@ if macro_regime_green:
               + "* -> Tap *Buy*\n"
               + "2. Select *Market Buy*\n"
               + "3. Enter either:\n"
-              + "   • *Method 1 (Easiest):* Tap 'USD ($)' -> Enter *$42.50*\n"
+              + "   • *Method 1 (Easiest):* Tap 'USD ($)' -> Enter *$"
+              + str(round(tranche_usd, 2))
+              + "*\n"
               + "   • *Method 2:* Tap 'Shares' -> Enter *"
               + str(round(shares_to_buy, 4))
               + "* shares"
@@ -450,10 +597,13 @@ if macro_regime_green:
 trades_df.to_csv(CSV_FILE, index=False)
 
 # ==============================================================================
-# 6. DAILY TELEGRAM HEARTBEAT
+# 7. DAILY TELEGRAM HEARTBEAT
 # ==============================================================================
 if exits_triggered == 0 and entries_triggered == 0:
   open_count = len(trades_df[trades_df["Status"] == "Open"])
+  coach_status = (
+      "50% Size ($21.25)" if exposure_coach_reduced else "100% Size ($42.50)"
+  )
   heartbeat_msg = (
       "🤖 *GoTrade Paper Bot: Daily Status Update*\n"
       + "• *Date:* "
@@ -462,8 +612,11 @@ if exits_triggered == 0 and entries_triggered == 0:
       + "• *Macro Gate:* "
       + gate_status
       + "\n"
-      + "• *Tracked Universe:* "
-      + universe_str
+      + "• *VIX Level:* "
+      + str(round(vix_close, 2))
+      + " (Cap: <25.0)\n"
+      + "• *Tranche Sizing:* "
+      + coach_status
       + "\n"
       + "• *Tranches Deployed:* "
       + str(open_count)
@@ -474,7 +627,7 @@ if exits_triggered == 0 and entries_triggered == 0:
   send_telegram(heartbeat_msg)
 
 # ==============================================================================
-# 7. BUILD DYNAMIC README SCOREBOARD
+# 8. BUILD DYNAMIC README SCOREBOARD
 # ==============================================================================
 
 
@@ -534,9 +687,13 @@ closed_trades_table = (
 )
 
 gate_badge = (
-    "🟢 **GREEN (Active)**"
-    if macro_regime_green
-    else "🔴 **RED (Paused - Cash Protected)**"
+    "🟢 **GREEN (Active)**" if macro_regime_green else "🔴 **" + gate_status + "**"
+)
+
+coach_badge = (
+    "⚠️ **DEFENSIVE (50% Sizing - $21.25 Tranches)**"
+    if exposure_coach_reduced
+    else "🛡️ **NORMAL (100% Sizing - $42.50 Tranches)**"
 )
 
 readme_content = (
@@ -549,7 +706,11 @@ Simulating automated swing trades across **"""
 ### Macro Market Regime Gate: """
     + gate_badge
     + """
-*New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day Simple Moving Average.*
+*New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day SMA, CBOE Volatility Index (`^VIX`) < 25.0, and 30-day cumulative drawdown > -$8.50.*
+
+### Exposure Coach Status: """
+    + coach_badge
+    + """
 
 ---
 
