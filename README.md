@@ -28,6 +28,7 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 |   Trade_ID | Strategy      | Ticker   | Entry_Date   |   Entry_Price | Notes                                  |
 |-----------:|:--------------|:---------|:-------------|--------------:|:---------------------------------------|
 |         10 | Dual-Momentum | SPY      | 2026-10-27   |        769.66 | Stop:765.21 | Target:778.56 | Pullback |
+|         11 | Dual-Momentum | QQQ      | 2026-10-28   |        725.61 | Stop:720.3 | Target:736.23 | Pullback  |
 
 ---
 
