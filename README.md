@@ -15,10 +15,10 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 | :--- | :--- | :--- |
 | **Philosophy** | Mean Reversion (Buy Oversold Panics) | Trend-Following (Breakouts & Pullbacks) |
 | **Virtual Capital** | $85.00 USD (2x $42.50 tranches) | $85.00 USD (2x $42.50 tranches) |
-| **Total Closed Trades** | 4 | 5 |
-| **Win Rate %** | 25.0% (1/4) | 20.0% (1/5) |
-| **Profit Factor** | 0.07 | 0.53 |
-| **Cumulative Net P&L** | **$-2.65 USD** | **$-1.12 USD** |
+| **Total Closed Trades** | 4 | 6 |
+| **Win Rate %** | 25.0% (1/4) | 16.7% (1/6) |
+| **Profit Factor** | 0.07 | 0.42 |
+| **Cumulative Net P&L** | **$-2.65 USD** | **$-1.69 USD** |
 
 *All results deduct GoTrade's 0.60% round-trip commission friction (0.30% buy + 0.30% sell).*
 
@@ -28,7 +28,6 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 |   Trade_ID | Strategy      | Ticker   | Entry_Date   |   Entry_Price | Notes                                  |
 |-----------:|:--------------|:---------|:-------------|--------------:|:---------------------------------------|
 |         10 | Dual-Momentum | SPY      | 2026-10-27   |        769.66 | Stop:765.21 | Target:778.56 | Pullback |
-|         11 | Dual-Momentum | QQQ      | 2026-10-28   |        725.61 | Stop:720.3 | Target:736.23 | Pullback  |
 
 ---
 
@@ -44,5 +43,6 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 |          7 | Dual-Momentum | SPY      | Stop Hit           | 2026-10-16   |        771.79 | 2026-10-16  |       764.43 |         42.5  |       -0.41 |       0.26 |     -0.66 | -1.55%       | Stop:764.43 | Target:786.51 | Pullback                                |
 |          8 | Dual-Momentum | SPY      | Stop Hit           | 2026-10-21   |        773.09 | 2026-10-22  |       768.4  |         42.5  |       -0.26 |       0.26 |     -0.51 | -1.21%       | Stop:768.4 | Target:782.47 | Pullback | PostMortem: Technical Whipsaw |
 |          9 | RSI-2         | MSFT     | Target Hit (5 SMA) | 2026-10-23   |        524.51 | 2026-10-26  |       532.6  |         21.25 |        0.33 |       0.13 |      0.2  | +0.94%       | RSI2: 9.3 (Exposure Coach: 50% Sized) | PostMortem: Target Reached    |
+|         11 | Dual-Momentum | QQQ      | Stop Hit           | 2026-10-28   |        725.61 | 2026-10-29  |       720.3  |         42.5  |       -0.31 |       0.26 |     -0.57 | -1.33%       | Stop:720.3 | Target:736.23 | Pullback | PostMortem: Technical Whipsaw |
 
 *Automated via GitHub Actions. Runs daily at 5:05 AM PHT after US market close.*
