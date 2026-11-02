@@ -5,7 +5,7 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 ### Macro Market Regime Gate: 🟢 **GREEN (Active)**
 *New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day SMA, CBOE Volatility Index (`^VIX`) < 25.0, and 30-day cumulative drawdown > -$8.50.*
 
-### Exposure Coach Status: 🛡️ **NORMAL (100% Sizing - $42.50 Tranches)**
+### Exposure Coach Status: ⚠️ **DEFENSIVE (50% Sizing - $21.25 Tranches)**
 
 ---
 
@@ -25,7 +25,10 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 ---
 
 ### Currently Open Positions
-_No active open positions. Cash intact._
+|   Trade_ID | Strategy   | Ticker   | Entry_Date   |   Entry_Price | Notes                                 |
+|-----------:|:-----------|:---------|:-------------|--------------:|:--------------------------------------|
+|         12 | RSI-2      | QQQ      | 2026-11-02   |        681.09 | RSI2: 8.4 (Exposure Coach: 50% Sized) |
+|         13 | RSI-2      | SPY      | 2026-11-02   |        752.1  | RSI2: 9.3 (Exposure Coach: 50% Sized) |
 
 ---
 
