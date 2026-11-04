@@ -11,4 +11,7 @@ Trade_ID,Strategy,Ticker,Status,Entry_Date,Entry_Price,Exit_Date,Exit_Price,Tran
 10,Dual-Momentum,SPY,Stop Hit,2026-10-27,769.66,2026-10-30,765.21,42.5,-0.25,0.26,-0.5,-1.18%,Stop:765.21 | Target:778.56 | Pullback | PostMortem: Technical Whipsaw
 11,Dual-Momentum,QQQ,Stop Hit,2026-10-28,725.61,2026-10-29,720.3,42.5,-0.31,0.26,-0.57,-1.33%,Stop:720.3 | Target:736.23 | Pullback | PostMortem: Technical Whipsaw
 12,RSI-2,QQQ,Open,2026-11-02,681.09,,,21.25,,,,,RSI2: 8.4 (Exposure Coach: 50% Sized)
-13,RSI-2,SPY,Open,2026-11-02,752.1,,,21.25,,,,,RSI2: 9.3 (Exposure Coach: 50% Sized)
+13,RSI-2,SPY,Target Hit (5 SMA),2026-11-02,752.1,2026-11-04,766.81,21.25,0.42,0.13,0.29,+1.36%,RSI2: 9.3 (Exposure Coach: 50% Sized) | PostMortem: Target Reached
+14,Dual-Momentum,SPY,Open,2026-11-04,766.81,,,21.25,,,,,Stop:762.64 | Target:775.15 | Pullback (Exposure Coach: 50% Sized)
+15,RSI-2,AAPL,Open,2026-11-04,349.51,,,21.25,,,,,RSI2: 6.5 (Exposure Coach: 50% Sized)
+16,Dual-Momentum,MSFT,Open,2026-11-04,555.8,,,21.25,,,,,Stop:542.34 | Target:582.72 | Breakout (Exposure Coach: 50% Sized)
