@@ -5,7 +5,7 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 ### Macro Market Regime Gate: 🔴 **RED (VIX >= 25.0 High Volatility)**
 *New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day SMA, CBOE Volatility Index (`^VIX`) < 25.0, and 30-day cumulative drawdown > -$8.50.*
 
-### Exposure Coach Status: 🛡️ **NORMAL (100% Sizing - $42.50 Tranches)**
+### Exposure Coach Status: ⚠️ **DEFENSIVE (50% Sizing - $21.25 Tranches)**
 
 ---
 
