@@ -2,7 +2,7 @@
 
 Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** with live US market feeds.
 
-### Macro Market Regime Gate: 🔴 **RED (VIX >= 25.0 High Volatility)**
+### Macro Market Regime Gate: 🟢 **GREEN (Active)**
 *New entries are only permitted when the S&P 500 (`SPY`) trades above its 200-day SMA, CBOE Volatility Index (`^VIX`) < 25.0, and 30-day cumulative drawdown > -$8.50.*
 
 ### Exposure Coach Status: ⚠️ **DEFENSIVE (50% Sizing - $21.25 Tranches)**
@@ -15,31 +15,29 @@ Simulating automated swing trades across **QQQ, SPY, AAPL, MSFT, NVDA, EPHE** wi
 | :--- | :--- | :--- |
 | **Philosophy** | Mean Reversion (Buy Oversold Panics) | Trend-Following (Breakouts & Pullbacks) |
 | **Virtual Capital** | $85.00 USD (2x $42.50 tranches) | $85.00 USD (2x $42.50 tranches) |
-| **Total Closed Trades** | 6 | 9 |
-| **Win Rate %** | 33.3% (2/6) | 11.1% (1/9) |
-| **Profit Factor** | 0.15 | 0.29 |
-| **Cumulative Net P&L** | **$-2.81 USD** | **$-3.07 USD** |
+| **Total Closed Trades** | 7 | 9 |
+| **Win Rate %** | 28.6% (2/7) | 11.1% (1/9) |
+| **Profit Factor** | 0.14 | 0.29 |
+| **Cumulative Net P&L** | **$-2.99 USD** | **$-3.07 USD** |
 
 *All results deduct GoTrade's 0.60% round-trip commission friction (0.30% buy + 0.30% sell).*
 
 ---
 
 ### Currently Open Positions
-|   Trade_ID | Strategy   | Ticker   | Entry_Date   |   Entry_Price | Notes                                 |
-|-----------:|:-----------|:---------|:-------------|--------------:|:--------------------------------------|
-|         12 | RSI-2      | QQQ      | 2026-11-02   |        681.09 | RSI2: 8.4 (Exposure Coach: 50% Sized) |
+_No active open positions. Cash intact._
 
 ---
 
 ### Recent Closed Trade History
 |   Trade_ID | Strategy      | Ticker   | Status             | Entry_Date   |   Entry_Price | Exit_Date   |   Exit_Price |   Tranche_USD |   Gross_PnL |   Fees_USD |   Net_PnL | Return_Pct   | Notes                                                                                                            |
 |-----------:|:--------------|:---------|:-------------------|:-------------|--------------:|:------------|-------------:|--------------:|------------:|-----------:|----------:|:-------------|:-----------------------------------------------------------------------------------------------------------------|
-|          6 | Dual-Momentum | SPY      | Stop Hit           | 2026-10-15   |        771.79 | 2026-10-16  |       764.44 |         42.5  |       -0.4  |       0.26 |     -0.66 | -1.55%       | Stop:764.44 | Target:786.49 | Pullback                                                                           |
 |          7 | Dual-Momentum | SPY      | Stop Hit           | 2026-10-16   |        771.79 | 2026-10-16  |       764.43 |         42.5  |       -0.41 |       0.26 |     -0.66 | -1.55%       | Stop:764.43 | Target:786.51 | Pullback                                                                           |
 |          8 | Dual-Momentum | SPY      | Stop Hit           | 2026-10-21   |        773.09 | 2026-10-22  |       768.4  |         42.5  |       -0.26 |       0.26 |     -0.51 | -1.21%       | Stop:768.4 | Target:782.47 | Pullback | PostMortem: Technical Whipsaw                                            |
 |          9 | RSI-2         | MSFT     | Target Hit (5 SMA) | 2026-10-23   |        524.51 | 2026-10-26  |       532.6  |         21.25 |        0.33 |       0.13 |      0.2  | +0.94%       | RSI2: 9.3 (Exposure Coach: 50% Sized) | PostMortem: Target Reached                                               |
 |         10 | Dual-Momentum | SPY      | Stop Hit           | 2026-10-27   |        769.66 | 2026-10-30  |       765.21 |         42.5  |       -0.25 |       0.26 |     -0.5  | -1.18%       | Stop:765.21 | Target:778.56 | Pullback | PostMortem: Technical Whipsaw                                           |
 |         11 | Dual-Momentum | QQQ      | Stop Hit           | 2026-10-28   |        725.61 | 2026-10-29  |       720.3  |         42.5  |       -0.31 |       0.26 |     -0.57 | -1.33%       | Stop:720.3 | Target:736.23 | Pullback | PostMortem: Technical Whipsaw                                            |
+|         12 | RSI-2         | QQQ      | Target Hit (5 SMA) | 2026-11-02   |        681.09 | 2026-11-09  |       679.35 |         21.25 |       -0.05 |       0.13 |     -0.18 | -0.86%       | RSI2: 8.4 (Exposure Coach: 50% Sized) | PostMortem: Target Reached                                               |
 |         13 | RSI-2         | SPY      | Target Hit (5 SMA) | 2026-11-02   |        752.1  | 2026-11-04  |       766.81 |         21.25 |        0.42 |       0.13 |      0.29 | +1.36%       | RSI2: 9.3 (Exposure Coach: 50% Sized) | PostMortem: Target Reached                                               |
 |         14 | Dual-Momentum | SPY      | Stop Hit           | 2026-11-04   |        766.81 | 2026-11-05  |       762.64 |         21.25 |       -0.12 |       0.13 |     -0.24 | -1.14%       | Stop:762.64 | Target:775.15 | Pullback (Exposure Coach: 50% Sized) | PostMortem: High Volatility Drag (VIX 28.2) |
 |         15 | RSI-2         | AAPL     | Target Hit (5 SMA) | 2026-11-04   |        349.51 | 2026-11-05  |       344.17 |         21.25 |       -0.32 |       0.13 |     -0.45 | -2.13%       | RSI2: 6.5 (Exposure Coach: 50% Sized) | PostMortem: Target Reached                                               |
