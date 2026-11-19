@@ -6,6 +6,9 @@ import urllib.request
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ==============================================================================
 # CONFIGURATION & UNIVERSE (INCLUDES EPHE)
@@ -18,6 +21,10 @@ BASE_TRANCHE_USD = 42.50
 MAX_TRANCHES_PER_STRATEGY = 2
 MAX_PORTFOLIO_DRAWDOWN_USD = -8.50  # Drawdown Circuit Breaker: -10% of $85
 CSV_FILE = "trades.csv"
+
+# DragonFi Gate
+DRAGONFI_ALLOCATED_PHP = float(os.environ.get("DRAGONFI_ALLOCATED_PHP", "0"))
+DRAGONFI_CAPITAL_GATE = 25000.0
 
 # Telegram Secrets
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -447,6 +454,12 @@ if macro_regime_green:
     # Model A: RSI-2 Dip
     if rsi2_open < MAX_TRANCHES_PER_STRATEGY and not is_already_held:
       if (c > sma200) and (prev_rsi2 < 10.0):
+        # DragonFi Gate Check for PSE (simulated via ticker check)
+        if "PSE" in ticker or ticker == "EPHE": # Example PSE indicator
+            if DRAGONFI_ALLOCATED_PHP < DRAGONFI_CAPITAL_GATE:
+                print(f"-> Skipping {ticker} (DragonFi): PHP {DRAGONFI_ALLOCATED_PHP} < {DRAGONFI_CAPITAL_GATE}")
+                continue
+
         new_id = (
             int(trades_df["Trade_ID"].max()) + 1
             if len(trades_df) > 0 and pd.notna(trades_df["Trade_ID"].max())

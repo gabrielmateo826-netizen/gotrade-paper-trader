@@ -25,12 +25,16 @@ jobs:
 
       - name: Install Python Libraries
         run: |
-          pip install --quiet yfinance pandas numpy tabulate
+          pip install --quiet yfinance pandas numpy tabulate ccxt python-dotenv
 
       - name: Execute Strategy Tracker
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BINANCE_TESTNET_API_KEY: ${{ secrets.BINANCE_TESTNET_API_KEY }}
+          BINANCE_TESTNET_SECRET: ${{ secrets.BINANCE_TESTNET_SECRET }}
+          BINANCE_USE_TESTNET: ${{ secrets.BINANCE_USE_TESTNET }}
+          DRAGONFI_ALLOCATED_PHP: ${{ secrets.DRAGONFI_ALLOCATED_PHP }}
         run: |
           python tracker.py
 
