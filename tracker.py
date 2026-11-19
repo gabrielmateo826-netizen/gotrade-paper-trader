@@ -687,13 +687,13 @@ closed_trades_table = (
 )
 
 gate_badge = (
-    "🟢 **GREEN (Active)**" if macro_regime_green else "🔴 **" + gate_status + "**"
+    "GREEN (Active)" if macro_regime_green else "RED **" + gate_status + "**"
 )
 
 coach_badge = (
-    "⚠️ **DEFENSIVE (50% Sizing - $21.25 Tranches)**"
+    "DEFENSIVE (50% Sizing - $21.25 Tranches)"
     if exposure_coach_reduced
-    else "🛡️ **NORMAL (100% Sizing - $42.50 Tranches)**"
+    else "NORMAL (100% Sizing - $42.50 Tranches)"
 )
 
 readme_content = (
