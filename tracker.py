@@ -23,7 +23,7 @@ MAX_PORTFOLIO_DRAWDOWN_USD = -8.50  # Drawdown Circuit Breaker: -10% of $85
 CSV_FILE = "trades.csv"
 
 # DragonFi Gate
-DRAGONFI_ALLOCATED_PHP = float(os.environ.get("DRAGONFI_ALLOCATED_PHP", "0"))
+DRAGONFI_ALLOCATED_PHP = float(os.environ.get("DRAGONFI_ALLOCATED_PHP") or "0")
 DRAGONFI_CAPITAL_GATE = 25000.0
 
 # Telegram Secrets

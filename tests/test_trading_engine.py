@@ -185,6 +185,20 @@ class TestTradingEngine(unittest.TestCase):
 
         self.assertFalse(dragonfi_allowed, "DragonFi signals should be suppressed when PHP < 25,000")
 
+    def test_dragonfi_allocated_php_empty_string_falls_back_to_zero(self):
+        """Test DRAGONFI_ALLOCATED_PHP="" safely falls back to 0.0 (GitHub Actions empty secret)"""
+        import importlib
+
+        with patch.dict(os.environ, {"DRAGONFI_ALLOCATED_PHP": ""}):
+            importlib.reload(tracker)
+
+        try:
+            self.assertEqual(tracker.DRAGONFI_ALLOCATED_PHP, 0.0,
+                             "Empty DRAGONFI_ALLOCATED_PHP must fall back to 0.0, not crash")
+        finally:
+            # Restore the module to the real environment value
+            importlib.reload(tracker)
+
 
 if __name__ == '__main__':
     unittest.main()
