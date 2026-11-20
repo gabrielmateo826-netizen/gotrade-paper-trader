@@ -36,6 +36,17 @@ class BinanceExecutor:
             print(f"Binance execution error: {e}")
             return None
 
+    def get_usdt_balance(self):
+        """Fetches the virtual USDT balance from the Spot Testnet wallet."""
+        try:
+            balance = self.exchange.fetch_balance()
+            free = balance.get("free", {})
+            usdt = free.get("USDT", 0.0)
+            return float(usdt)
+        except Exception as e:
+            print(f"Binance balance fetch error: {e}")
+            return None
+
 if __name__ == "__main__":
     # Simple sanity check
     executor = BinanceExecutor()

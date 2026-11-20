@@ -247,6 +247,28 @@ print(
 )
 
 # ==============================================================================
+# 4b. BINANCE SPOT TESTNET STATUS CHECK (runs regardless of Macro Gate)
+# ==============================================================================
+binance_status = "Testnet: OFFLINE"
+binance_usdt = None
+try:
+  from binance_executor import BinanceExecutor
+  executor = BinanceExecutor()
+  binance_usdt = executor.get_usdt_balance()
+  if binance_usdt is not None:
+    binance_status = "Testnet: ONLINE"
+except Exception as e:
+  print("Binance Spot Testnet check skipped: " + str(e))
+
+print(
+    "--- BINANCE SPOT TESTNET: "
+    + binance_status
+    + " | Virtual USDT Balance: "
+    + str(binance_usdt)
+    + " ---"
+)
+
+# ==============================================================================
 # 5. EVALUATE EXITS ON OPEN POSITIONS
 # ==============================================================================
 open_indices = trades_df[trades_df["Status"] == "Open"].index
