@@ -129,6 +129,121 @@ trades_df = pd.read_csv(
 today_str = datetime.date.today().strftime("%Y-%m-%d")
 
 # ==============================================================================
+# 1b. TELEGRAM CONFIRMATION & PENDING TRADES
+# ==============================================================================
+PENDING_TRADES_FILE = "pending_trades.json"
+
+def get_telegram_updates():
+    """Polls Telegram for /✅_Executed or /❌_Skipped callbacks via getUpdates."""
+    if not TELEGRAM_BOT_TOKEN:
+        return []
+
+    endpoint = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    try:
+        req = urllib.request.Request(endpoint)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            if not data.get("ok"):
+                return []
+
+            confirmed_tickers = []
+            skipped_tickers = []
+
+            for update in data.get("result", []):
+                # Check for callback queries or message text as fallbacks
+                callback = update.get("callback_query")
+                if callback:
+                    cb_data = callback.get("data", "")
+                    if cb_data.startswith("exec_"):
+                        confirmed_tickers.append(cb_data.replace("exec_", ""))
+                    elif cb_data.startswith("skip_"):
+                        skipped_tickers.append(cb_data.replace("skip_", ""))
+
+                # Also handle text commands if callback fails
+                msg = update.get("message")
+                if msg and msg.get("text"):
+                    text = msg.get("text")
+                    if text.startswith("/executed_"):
+                        confirmed_tickers.append(text.replace("/executed_", ""))
+                    elif text.startswith("/skipped_"):
+                        skipped_tickers.append(text.replace("/skipped_", ""))
+
+            return list(set(confirmed_tickers)), list(set(skipped_tickers))
+    except Exception as e:
+        print(f"Telegram polling error: {e}")
+        return [], []
+
+def load_pending_trades():
+    if os.path.exists(PENDING_TRADES_FILE):
+        try:
+            with open(PENDING_TRADES_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_pending_trades(pending):
+    with open(PENDING_TRADES_FILE, "w") as f:
+        json.dump(pending, f, indent=2)
+
+def send_telegram_with_inline_keyboard(message, ticker):
+    """Sends message with inline buttons for execution confirmation."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+
+    endpoint = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    # Simple inline keyboard for confirmation
+    keyboard = {
+        "inline_keyboard": [[
+            {"text": "✅ Executed", "callback_data": f"exec_{ticker}"},
+            {"text": "❌ Skipped", "callback_data": f"skip_{ticker}"}
+        ]]
+    }
+
+    payload = json.dumps({
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+        "reply_markup": keyboard
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        endpoint, data=payload, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            pass
+        return True
+    except Exception as e:
+        print(f"Telegram keyboard dispatch error: {e}")
+        # Fallback to plain message
+        return send_telegram(message)
+
+# Initialize pending trades and poll for confirmations
+updates = get_telegram_updates()
+confirmed_list, skipped_list = updates if updates else ([], [])
+pending_trades = load_pending_trades()
+
+# Move confirmed pending trades into trades_df
+for ticker in confirmed_list:
+    if ticker in pending_trades:
+        trade_data = pending_trades[ticker]
+        # Only add if not already in trades_df (prevent duplicates from re-polling)
+        exists = any((trades_df["Ticker"] == ticker) & (trades_df["Status"] == "Open"))
+        if not exists:
+            trades_df = pd.concat([trades_df, pd.DataFrame([trade_data])], ignore_index=True)
+        del pending_trades[ticker]
+
+# Remove skipped trades
+for ticker in skipped_list:
+    if ticker in pending_trades:
+        del pending_trades[ticker]
+
+# Save updated pending list
+save_pending_trades(pending_trades)
+
+# ==============================================================================
 # 3. EXPOSURE COACH & DRAWDOWN CIRCUIT BREAKER
 # ==============================================================================
 closed_trades_history = trades_df[
@@ -507,9 +622,9 @@ if macro_regime_green:
             "Return_Pct": "",
             "Notes": "RSI2: " + str(round(prev_rsi2, 1)) + coach_note,
         }
-        trades_df = pd.concat(
-            [trades_df, pd.DataFrame([new_row])], ignore_index=True
-        )
+        # Store in pending trades instead of trades_df
+        pending_trades[str(new_id)] = new_row
+        save_pending_trades(pending_trades)
         rsi2_open += 1
         entries_triggered += 1
         is_already_held = True
@@ -540,7 +655,7 @@ if macro_regime_green:
             + str(round(shares_to_buy, 4))
             + "* shares"
         )
-        send_telegram(entry_msg)
+        send_telegram_with_inline_keyboard(entry_msg, new_id)
 
     # Model B: Dual Momentum
     if mom_open < MAX_TRANCHES_PER_STRATEGY and not is_already_held:
@@ -591,9 +706,9 @@ if macro_regime_green:
                   + coach_note
               ),
           }
-          trades_df = pd.concat(
-              [trades_df, pd.DataFrame([new_row])], ignore_index=True
-          )
+          # Store in pending trades instead of trades_df
+          pending_trades[str(new_id)] = new_row
+          save_pending_trades(pending_trades)
           mom_open += 1
           entries_triggered += 1
 
@@ -627,7 +742,7 @@ if macro_regime_green:
               + str(round(shares_to_buy, 4))
               + "* shares"
           )
-          send_telegram(entry_msg)
+          send_telegram_with_inline_keyboard(entry_msg, new_id)
 
 trades_df.to_csv(CSV_FILE, index=False)
 

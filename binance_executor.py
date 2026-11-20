@@ -30,7 +30,18 @@ class BinanceExecutor:
             # Disable fetchCurrencies for testnet stability as requested
             self.exchange.options['defaultType'] = 'spot'
 
-            order = self.exchange.create_market_order(symbol, side, amount)
+            # 1. Enforce precision
+            precision_amount = self.exchange.amount_to_precision(symbol, amount)
+
+            # 2. Enforce minimum notional (5.5 USDT)
+            ticker = self.exchange.fetch_ticker(symbol)
+            price = ticker['last']
+            notional = float(precision_amount) * price
+            if notional < 5.5:
+                print(f"Order rejected: Notional {notional:.2f} USDT < 5.5 USDT minimum.")
+                return None
+
+            order = self.exchange.create_market_order(symbol, side, precision_amount)
             return order
         except Exception as e:
             print(f"Binance execution error: {e}")
