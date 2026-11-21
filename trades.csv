@@ -15,5 +15,5 @@ Trade_ID,Strategy,Ticker,Status,Entry_Date,Entry_Price,Exit_Date,Exit_Price,Tran
 14,Dual-Momentum,SPY,Stop Hit,2026-11-04,766.81,2026-11-05,762.64,21.25,-0.12,0.13,-0.24,-1.14%,Stop:762.64 | Target:775.15 | Pullback (Exposure Coach: 50% Sized) | PostMortem: High Volatility Drag (VIX 28.2)
 15,RSI-2,AAPL,Target Hit (5 SMA),2026-11-04,349.51,2026-11-05,344.17,21.25,-0.32,0.13,-0.45,-2.13%,RSI2: 6.5 (Exposure Coach: 50% Sized) | PostMortem: Target Reached
 16,Dual-Momentum,MSFT,Stop Hit,2026-11-04,555.8,2026-11-05,542.34,21.25,-0.51,0.13,-0.64,-3.02%,Stop:542.34 | Target:582.72 | Breakout (Exposure Coach: 50% Sized) | PostMortem: High Volatility Drag (VIX 28.2)
-17,RSI-2,SPY,Open,2026-11-19,730.2,,,21.25,,,,,RSI2: 5.5 (Exposure Coach: 50% Sized)
-18,RSI-2,MSFT,Open,2026-11-19,508.29,,,21.25,,,,,RSI2: 4.6 (Exposure Coach: 50% Sized)
+17,RSI-2,SPY,Stop Hit,2026-11-19,730.2,2026-11-21,693.69,21.25,-1.06,0.13,-1.19,-5.6%,RSI2: 5.5 (Exposure Coach: 50% Sized) | PostMortem: High Volatility Drag (VIX 35.9)
+18,RSI-2,MSFT,Stop Hit,2026-11-19,508.29,2026-11-21,482.88,21.25,-1.06,0.13,-1.19,-5.6%,RSI2: 4.6 (Exposure Coach: 50% Sized) | PostMortem: High Volatility Drag (VIX 35.9)

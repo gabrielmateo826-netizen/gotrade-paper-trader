@@ -1,9 +1,12 @@
 {
+  "best_symbol": "ETH/USDT",
   "best_timeframe": "4h",
-  "rsi_low": 15,
-  "rsi_high": 70,
-  "sma_trend": 50,
+  "rsi_period": 2,
+  "rsi_low": 10,
+  "sma_trend": 200,
+  "exit_type": "trailing",
   "sma_exit": 5,
+  "trailing_pct": 0.04,
   "stop_loss_pct": 0.06,
   "min_notional_usdt": 5.5,
   "position_size": 0.45
