@@ -1,0 +1,10 @@
+{
+  "best_timeframe": "4h",
+  "rsi_low": 15,
+  "rsi_high": 70,
+  "sma_trend": 50,
+  "sma_exit": 5,
+  "stop_loss_pct": 0.06,
+  "min_notional_usdt": 5.5,
+  "position_size": 0.45
+}

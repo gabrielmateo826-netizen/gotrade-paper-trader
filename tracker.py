@@ -293,6 +293,9 @@ for ticker in fetch_list:
     if isinstance(df.columns, pd.MultiIndex):
       df = df.xs(ticker, level=1, axis=1)
     df = df.dropna().copy()
+    if df.empty:
+      print("Skipping " + str(ticker) + ": no usable price data after cleaning.")
+      continue
 
     # Core Technical Indicators
     df["SMA200"] = df["Close"].rolling(200).mean()
